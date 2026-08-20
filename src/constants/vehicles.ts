@@ -1,0 +1,76 @@
+import { VehicleConfig } from '../types/simulator';
+
+export const VEHICLES: Record<string, VehicleConfig> = {
+  compact: {
+    id: 'compact',
+    name: '캐스퍼 / 모닝',
+    nameEn: 'Compact (City Car)',
+    category: '경차',
+    description: '작은 차폭(1.6m)과 좁은 회전반경(4.5m)으로 초보자가 주차와 좁은 골목길을 연습하기에 가장 수월합니다.',
+    width: 1.60,
+    length: 3.60,
+    height: 1.55,
+    wheelBase: 2.40,
+    maxWheelAngle: 0.64, // ~36.6 degrees tire turn
+    maxSteeringWheelTurns: 1.5, // 540 degrees (1.5 turns each side, 3 turns lock-to-lock)
+    steeringRatio: 14.8,
+    maxSpeed: 100,
+    acceleration: 4.8,
+    brakingPower: 9.0,
+    reverseMaxSpeed: 25,
+    color: '#06b6d4',
+    cockpitPos: [-0.35, 1.28, 0.45],
+    leftMirrorPos: [-0.85, 1.10, 0.65],
+    rightMirrorPos: [0.85, 1.10, 0.65],
+    rearMirrorPos: [0.0, 1.30, 0.35],
+    turningRadius: 4.5,
+  },
+  sedan: {
+    id: 'sedan',
+    name: '아반떼 / K5',
+    nameEn: 'Mid Sedan',
+    category: '준중형 세단',
+    description: '대한민국 표준 세단 크기(1.8m)로 15.2:1의 실제 승용차 조향비와 균형 잡힌 주행감을 제공합니다.',
+    width: 1.82,
+    length: 4.68,
+    height: 1.44,
+    wheelBase: 2.72,
+    maxWheelAngle: 0.58, // ~33.2 degrees
+    maxSteeringWheelTurns: 1.5, // 540 degrees (1.5 turns)
+    steeringRatio: 15.2,
+    maxSpeed: 130,
+    acceleration: 5.5,
+    brakingPower: 9.5,
+    reverseMaxSpeed: 30,
+    color: '#2563eb',
+    cockpitPos: [-0.40, 1.25, 0.55],
+    leftMirrorPos: [-0.96, 1.05, 0.75],
+    rightMirrorPos: [0.96, 1.05, 0.75],
+    rearMirrorPos: [0.0, 1.28, 0.40],
+    turningRadius: 5.3,
+  },
+  suv: {
+    id: 'suv',
+    name: '싼타페 / 쏘렌토',
+    nameEn: 'Mid-Large SUV',
+    category: '중형 SUV',
+    description: '높은 운전석 시야와 넓은 차폭(1.9m), 긴 전장으로 보닛 앞 사각지대와 주차 공간 차폭감 연습에 탁월합니다.',
+    width: 1.91,
+    length: 4.83,
+    height: 1.70,
+    wheelBase: 2.81,
+    maxWheelAngle: 0.54, // ~31.0 degrees
+    maxSteeringWheelTurns: 1.5, // 540 degrees (1.5 turns)
+    steeringRatio: 15.6,
+    maxSpeed: 130,
+    acceleration: 5.2,
+    brakingPower: 9.8,
+    reverseMaxSpeed: 28,
+    color: '#4f46e5',
+    cockpitPos: [-0.45, 1.48, 0.65],
+    leftMirrorPos: [-1.02, 1.35, 0.85],
+    rightMirrorPos: [1.02, 1.35, 0.85],
+    rearMirrorPos: [0.0, 1.55, 0.45],
+    turningRadius: 5.8,
+  }
+};
