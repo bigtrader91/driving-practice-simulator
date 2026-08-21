@@ -23,7 +23,7 @@ check(!/addEventListener\(\s*['"]mousemove['"]/.test(app), '전역 마우스 위
 check(app.includes("type CameraMode = 'cockpit' | 'hood' | 'chase' | 'top'"), '4개 카메라 시점이 없습니다.');
 check(app.includes('leftMirror') && app.includes('rightMirror') && app.includes('rearMirror') && app.includes('backupMirror'), '미러 또는 후방카메라가 누락되었습니다.');
 check(app.includes('trajectoryGeometry') && app.includes('widthGeometry'), '타이어 궤적선 또는 차폭선이 없습니다.');
-check(css.includes('.cockpit-overlay') && css.includes('.bottom-hud') && css.includes('.modal-bg'), '컴팩트 HUD 또는 설정 화면 스타일이 없습니다.');
+check(css.includes('.cockpit-shell') && css.includes('.bottom-hud-row') && css.includes('.modal-backdrop'), '컴팩트 HUD 또는 설정 화면 스타일이 없습니다.');
 check(exists('.github/workflows/ci.yml'), 'GitHub Actions CI가 없습니다.');
 
 const missionIds = [
