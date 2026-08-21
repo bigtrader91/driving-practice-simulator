@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "validate": "node scripts/validate-simulator.mjs",
+    "check": "npm run validate && npm run build"
   },
   "dependencies": {
     "clsx": "^2.1.1",
