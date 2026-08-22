@@ -48,7 +48,7 @@ city 분기(`else` 브랜치)를 `city_lane_change`용 기존 직선 도로와
 - 신호등 폴대: 기둥 + 3등(적황녹) 하우징. 램프 emissive는 SimulationCanvas가
   controller 상태를 읽어 갱신 (TrackBuilder는 지형만).
 - 회전교차로: 중앙섬(cylinder) + 순환 차로 링 + 4방향 진출입로. 순환 차량 AI 2~3대 배치.
-- 온커밍 차량 AI: 교차로 북측 음의 x차로에서 +Z 방향 접근 (비보호 좌회전 대상).
+- 온커밍 차량 AI: 음의 x차로(x<0)에서 +Z 방향으로 교차로에 접근 (비보호 좌회전 시 양보 대상).
 
 ## 4. TrafficLightController (`src/simulation/TrafficLightController.ts`)
 
@@ -95,10 +95,20 @@ class MissionEvaluator {
 |---|---|---|
 | stop_at_red | 정지선~교차로 박스 진입 순간 NS 위상이 red | **즉시 실패** (isMandatory) |
 | school_zone_speed | school 존 내 speed > speedLimit(30) | 감점 (scorePenalty 소비) |
-| unprotected_left | 좌회전 경로 진입 중 온커밍 차량 충돌 or 안전간격 미달 진입 | 감점 |
+| unprotected_left | 좌회전 경로 진입 중 온커밍 차량 충돌 or 안전간격 미달(온커밍 30m 내 접근 중 진입) | 감점 |
 | yield_check | aggressive 차량 후방 근접(25m 내 접근 중)일 때 해당 차로 진입 | 감점 |
 | roundabout_yield | 순환 차량 접근 중 진입 무시 | 감점 |
 | signal_check 등 기존 깜빡이/미러 체크 | 기존 SimulationCanvas 인라인 로직을 evaluator로 이관 | 감점 |
+
+**판정 신설 범위 명시**: 새 판정이 연결되는 objective id는 위 표의 5종
+(`stop_at_red`, `school_zone_speed`, `unprotected_left`, `yield_check`,
+`roundabout_yield`) + 기존 깜빡이/미러 체크 이관분뿐이다. 나머지 장식
+objective(`stay_in_lane`, `smooth_speed`, `curb_distance` 등)는 이번
+사이클에서 그대로 둔다.
+
+- `city_traffic` 미션에 `roundabout_yield` objective 항목을 missions.ts에
+  신규 추가한다 (isMandatory: false, scorePenalty: 15). 그렇지 않으면
+  "objectives가 진실의 원천" 원칙상 evaluator 규칙이 no-op이 된다.
 
 - 완료 판정(targetArea 도달, P단 홀드)은 기존 로직 유지하되
   SimulationCanvas에서 evaluator 완료 후 처리.
