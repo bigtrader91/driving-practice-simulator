@@ -277,6 +277,7 @@ const baseObjectives = [
   { id: 'stop_at_red', text: '적색 신호 정지선 준수', isCompleted: false, isMandatory: true, scorePenalty: 30 },
   { id: 'school_zone_speed', text: '어린이보호구역 30km/h 이하 준수', isCompleted: false, isMandatory: false, scorePenalty: 15 },
   { id: 'unprotected_left', text: '비보호 좌회전 안전 진입', isCompleted: false, isMandatory: false, scorePenalty: 15 },
+  { id: 'roundabout_yield', text: '회전교차로 순환 차량 양보 후 진입', isCompleted: false, isMandatory: false, scorePenalty: 15 },
 ];
 
 const makeMission = (over: Partial<Mission> = {}): Mission => ({
@@ -393,6 +394,9 @@ const inBounds = (
   z: number,
   b: MissionZone['bounds'],
 ): boolean => Math.abs(x - b.x) < b.width / 2 && Math.abs(z - b.z) < b.depth / 2;
+
+// (스펙 편차 명시) EvalContext에서 mission/dt 필드를 뺀다 —
+// mission은 생성자에서 주입되고 dt는 throttle이 wall-clock 기반이라 불필요하다.
 
 /**
  * missions.ts의 objectives를 유일한 진실 원천으로 소비하는 판정기.
@@ -673,7 +677,7 @@ describe('MissionEvaluator — 비보호 좌회전 / 회전교차로', () => {
       lights: null,
     });
     expect(r.penalties).toHaveLength(1);
-    expect(r.penalties[0].reason).toContain('roundabout') === false; // reason은 objective text
+    expect(r.penalties[0].reason).toContain('회전교차로');
   });
 
   it('objective가 정의되지 않은 미션의 판정은 no-op이다', () => {
@@ -689,14 +693,12 @@ describe('MissionEvaluator — 비보호 좌회전 / 회전교차로', () => {
 });
 ```
 
-참고: 마지막에서 두 번째 테스트의 `expect(...).toBe(false)`는 reason 문자열이 objective text임을 확인하는 자리표시자다 — 구현 시 `toContain('회전교차로')` 로 교정한다.
-
-- [ ] **Step 2: 실행 — 대부분 통과해야 한다 (구현은 Task 4에 포함)**
+- [ ] **Step 2: 실행**
 
 Run: `npx vitest run src/simulation/MissionEvaluator.test.ts`
-Expected: PASS (placeholder assertion 교정 후 전부 green)
+Expected: PASS (판정 메서드는 Task 4에서 구현됨 — 테스트만 추가하는 태스크)
 
-- [ ] **Step 3: placeholder 교정 후 전체 테스트**
+- [ ] **Step 3: 전체 테스트**
 
 Run: `npm test`
 Expected: PASS (TrafficLightController 포함 전체)
@@ -718,6 +720,8 @@ git commit -m "test: 즉시실패/yield/비보호좌회전/회전교차로 판�
 - [ ] **Step 1: targetArea/zones/stopLine/objectives 교체**
 
 `city_traffic` 미션 객체에서 `targetArea` 블록을 교체:
+
+(참고: `stopLine`은 판정기가 교차로 박스 진입 시점 기준으로 판정하므로 직접 읽히지 않지만, HUD/향후 확장을 위해 데이터로 유지한다)
 
 ```ts
     targetArea: {
@@ -774,13 +778,17 @@ export interface TrafficSignalRig {
 }
 ```
 
-`buildTrackScene` 반환 타입에 `signals: TrafficSignalRig[]` 추가, 함수 말미 반환문:
+`buildTrackScene` 반환 타입에 `signals: TrafficSignalRig[]` 추가. 함수 상단 초기화 영역(`obstacles`, `initialTraffic` 선언 곁)에 다음을 선언해 **블록 스코프 문제를 회피**한다:
 
 ```ts
-  return { trackGroup: group, obstacles, initialTraffic, goalMesh, signals: [] };
+  const signals: TrafficSignalRig[] = [];
 ```
 
-(실제 rigs는 아래에서 push)
+함수 말미 반환문:
+
+```ts
+  return { trackGroup: group, obstacles, initialTraffic, goalMesh, signals };
+```
 
 - [ ] **Step 2: city_traffic 분기 신설**
 
@@ -809,11 +817,32 @@ export interface TrafficSignalRig {
       }
     });
 
-    [-12.2, 12.2].forEach((cx) => {
-      const curb = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.2, 320), curbMat);
-      curb.position.set(cx, 0.1, 0);
-      group.add(curb);
-      obstacles.push({ type: 'box', x: cx, z: 0, width: 0.4, depth: 320, name: '도로변 보도블록', isPenaltyTrigger: true });
+    // ── 도로변 연석: 동측은 풀 길이, 서측은 가지도로 진입구(z 20~40) 개방 ──
+    const eastCurb = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.2, 320), curbMat);
+    eastCurb.position.set(12.2, 0.1, 0);
+    group.add(eastCurb);
+    obstacles.push({ type: 'box', x: 12.2, z: 0, width: 0.4, depth: 320, name: '도로변 보도블록', isPenaltyTrigger: true });
+
+    // 서측 연석 2분절: z∈[-160,20) 과 (40,160] — 좌회전 경로 확보
+    [[-70, 180], [100, 120]].forEach(([cz, cd]) => {
+      const westCurb = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.2, cd), curbMat);
+      westCurb.position.set(-12.2, 0.1, cz);
+      group.add(westCurb);
+      obstacles.push({ type: 'box', x: -12.2, z: cz, width: 0.4, depth: cd, name: '도로변 보도블록', isPenaltyTrigger: true });
+    });
+
+    // 가지도로·출구도로 가장자리 연석 (잔디 이탈 방지)
+    const edgeCurbs: [number, number, number, number][] = [
+      [-39, 21.85, 54, 0.3],   // 가지도로 북연
+      [-39, 38.15, 54, 0.3],   // 가지도로 남연
+      [-86.85, 72, 52, 0.3],   // 출구도로 서연
+      [-73.15, 72, 52, 0.3],   // 출구도로 동연
+    ];
+    edgeCurbs.forEach(([ex, ez, ew, ed]) => {
+      const c = new THREE.Mesh(new THREE.BoxGeometry(ew, 0.2, ed), curbMat);
+      c.position.set(ex, 0.1, ez);
+      group.add(c);
+      obstacles.push({ type: 'box', x: ex, z: ez, width: ew, depth: ed, name: '가지도로 연석', isPenaltyTrigger: true });
     });
 
     // ── 어린이보호구역 데칼 (z 60~100) ──
@@ -880,10 +909,11 @@ export interface TrafficSignalRig {
       return { axis, lamps };
     };
 
-    const signals: TrafficSignalRig[] = [
-      mkSignal('NS', 13.0, 38.5, Math.PI),     // 남향 접근(우측 코너, -Z 바라보도록 반전)
+    // 상단에서 hoist된 signals 배열에 추가
+    signals.push(
+      mkSignal('NS', 13.0, 38.5, Math.PI),      // 남향 접근(우측 코너)
       mkSignal('EW', -13.0, 21.5, Math.PI / 2), // 서향 가지도로 접근
-    ];
+    );
 
     // ── 회전교차로 (중심 (-80,30)) ──
     const island = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 0.4, 32), grassMat);
@@ -945,7 +975,7 @@ export interface TrafficSignalRig {
     });
 ```
 
-반환문의 `signals: []`를 `signals`로 교체.
+반환문은 Step 1에서 작성한 `signals`를 그대로 사용한다.
 
 - [ ] **Step 3: 빌드 확인**
 
@@ -986,8 +1016,10 @@ effect 내부 참조 교체 (animate 루프 안):
 ```tsx
 import { TrafficLightController } from '../../simulation/TrafficLightController';
 import { MissionEvaluator } from '../../simulation/MissionEvaluator';
-import { buildTrackScene, CollisionObstacle, TrafficSignalRig } from './TrackBuilder';
+import { TrafficSignalRig } from './TrackBuilder';
 ```
+
+(주의: `buildTrackScene, CollisionObstacle` 임포트는 기존 14번 줄에 이미 있음 — 새로 추가하지 말고 기존 줄에 `TrafficSignalRig`만 병합)
 
 props 인터페이스에 추가:
 
