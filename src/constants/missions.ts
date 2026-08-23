@@ -181,17 +181,24 @@ export const MISSIONS: Mission[] = [
     startPos: [0, 0, 140],
     startHeading: 0,
     targetArea: {
-      x: 40,
-      z: -140,
+      x: -80,
+      z: 90,
       width: 8,
       depth: 8,
     },
+    zones: [
+      { type: 'school', bounds: { x: 0, z: 80, width: 24, depth: 40 }, speedLimit: 30 },
+      { type: 'intersection', bounds: { x: 0, z: 30, width: 24, depth: 16 } },
+      { type: 'roundabout', bounds: { x: -80, z: 30, width: 48, depth: 48 } },
+    ],
+    stopLine: { z: 36 },
     maxScore: 100,
     objectives: [
       { id: 'complete_city', text: '종합 주행 코스 완주', isCompleted: false, isMandatory: true, scorePenalty: 40 },
       { id: 'stop_at_red', text: '적색 신호 정지선 준수 (신호위반 금지)', isCompleted: false, isMandatory: true, scorePenalty: 30 },
       { id: 'school_zone_speed', text: '어린이보호구역 30km/h 이하 준수', isCompleted: false, isMandatory: false, scorePenalty: 15 },
       { id: 'unprotected_left', text: '비보호 좌회전 안전 진입', isCompleted: false, isMandatory: false, scorePenalty: 15 },
+      { id: 'roundabout_yield', text: '회전교차로 순환 차량 양보 후 진입', isCompleted: false, isMandatory: false, scorePenalty: 15 },
     ]
   }
 ];
