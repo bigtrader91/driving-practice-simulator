@@ -40,6 +40,7 @@ export const App: React.FC = () => {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [lastCompletedScore, setLastCompletedScore] = useState(100);
   const [lastDeductions, setLastDeductions] = useState<ScoreDeduction[]>([]);
+  const [failReason, setFailReason] = useState<string | null>(null);
 
   // Real-time Sim State
   const [carState, setCarState] = useState<CarState>({
@@ -122,6 +123,7 @@ export const App: React.FC = () => {
     setCurrentScore(100);
     setRecentPenalty(null);
     setShowFeedbackModal(false);
+    setFailReason(null);
     inputsRef.current.mouseSteerRatio = 0;
     inputsRef.current.isMouseSteeringActive = true;
     setSimKey((prev) => prev + 1);
@@ -300,6 +302,11 @@ export const App: React.FC = () => {
     setShowFeedbackModal(true);
   }, []);
 
+  const handleMissionFail = useCallback((reason: string) => {
+    setFailReason(reason);
+    setShowFeedbackModal(true);
+  }, []);
+
   const handleNextMission = useCallback(() => {
     const currentIndex = MISSIONS.findIndex((m) => m.id === currentMission.id);
     const nextMission = MISSIONS[(currentIndex + 1) % MISSIONS.length];
@@ -321,6 +328,7 @@ export const App: React.FC = () => {
         inputsRef={inputsRef}
         onStateUpdate={handleStateUpdate}
         onMissionComplete={handleMissionComplete}
+        onMissionFail={handleMissionFail}
         onPenalty={handlePenalty}
         leftMirrorCanvasRef={leftMirrorCanvasRef}
         rightMirrorCanvasRef={rightMirrorCanvasRef}
@@ -422,6 +430,7 @@ export const App: React.FC = () => {
           mission={currentMission}
           score={lastCompletedScore}
           deductions={lastDeductions}
+          failReason={failReason ?? undefined}
           onRetry={handleResetCar}
           onNextMission={handleNextMission}
         />
