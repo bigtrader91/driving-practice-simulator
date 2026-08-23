@@ -831,12 +831,12 @@ export interface TrafficSignalRig {
       obstacles.push({ type: 'box', x: -12.2, z: cz, width: 0.4, depth: cd, name: '도로변 보도블록', isPenaltyTrigger: true });
     });
 
-    // 가지도로·출구도로 가장자리 연석 (잔디 이탈 방지)
+    // 가지도로·출구도로 가장자리 연석 (잔디 이탈 방지) — 튜플 순서: [x, z, sizeX, sizeZ]
     const edgeCurbs: [number, number, number, number][] = [
       [-39, 21.85, 54, 0.3],   // 가지도로 북연
       [-39, 38.15, 54, 0.3],   // 가지도로 남연
-      [-86.85, 72, 52, 0.3],   // 출구도로 서연
-      [-73.15, 72, 52, 0.3],   // 출구도로 동연
+      [-86.85, 72, 0.3, 52],   // 출구도로 서연
+      [-73.15, 72, 0.3, 52],   // 출구도로 동연
     ];
     edgeCurbs.forEach(([ex, ez, ew, ed]) => {
       const c = new THREE.Mesh(new THREE.BoxGeometry(ew, 0.2, ed), curbMat);
