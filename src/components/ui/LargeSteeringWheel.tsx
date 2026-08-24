@@ -83,7 +83,7 @@ export const LargeSteeringWheel: React.FC<LargeSteeringWheelProps> = ({
           background: 'radial-gradient(circle, #1e293b 0%, #0f172a 70%, #020617 100%)',
           boxShadow: '0 10px 30px -5px rgba(0, 0, 0, 0.8), inset 0 0 20px rgba(0,0,0,0.9), 0 0 0 6px #1e293b, 0 0 0 10px #0f172a',
         }}
-        title="마우스를 좌우로 움직이거나 드래그하여 핸들을 조작하세요 (최대 1.5바퀴 / 540도)"
+        title="핸들을 좌우로 드래그하여 조작하세요 (최대 1.5바퀴 / 540도)"
       >
         {/* 12 O'Clock Center Alignment Marker (Red/Yellow Sports Band) */}
         <div className="absolute top-0 w-4 h-6 bg-gradient-to-b from-amber-400 to-rose-500 rounded-sm shadow-md ring-1 ring-white/50" />
@@ -115,7 +115,7 @@ export const LargeSteeringWheel: React.FC<LargeSteeringWheelProps> = ({
 
       {/* Mouse Steering Prompt Under Wheel */}
       <div className="text-[10px] text-slate-400 font-bold mt-1 bg-slate-950/80 px-2.5 py-0.5 rounded-full border border-slate-800">
-        🖱️ 마우스 좌우 이동: 1.5바퀴(540°) 회전
+        🖱️ 핸들 좌우 드래그: 1.5바퀴(540°) 회전
       </div>
     </div>
   );

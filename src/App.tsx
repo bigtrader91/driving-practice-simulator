@@ -142,7 +142,7 @@ export const App: React.FC = () => {
     inputsRef.current.isMouseSteeringActive = true;
   }, []);
 
-  // Keyboard & Mouse Event Listeners
+  // Keyboard Event Listeners
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const inputs = inputsRef.current;
@@ -263,22 +263,12 @@ export const App: React.FC = () => {
       }
     };
 
-    const handleMouseMove = (e: MouseEvent) => {
-      // Direct smooth horizontal mouse steering across entire screen
-      const centerX = window.innerWidth / 2;
-      const steerDist = (e.clientX - centerX) / (window.innerWidth * 0.35);
-      inputsRef.current.mouseSteerRatio = THREE.MathUtils.clamp(steerDist, -1.0, 1.0);
-      inputsRef.current.isMouseSteeringActive = true;
-    };
-
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
-    window.addEventListener('mousemove', handleMouseMove);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
-      window.removeEventListener('mousemove', handleMouseMove);
     };
   }, []);
 
