@@ -302,7 +302,9 @@ export const App: React.FC = () => {
     setShowFeedbackModal(true);
   }, []);
 
-  const handleMissionFail = useCallback((reason: string) => {
+  const handleMissionFail = useCallback((reason: string, score: number, deductions: ScoreDeduction[]) => {
+    setLastCompletedScore(score);
+    setLastDeductions(deductions);
     setFailReason(reason);
     setShowFeedbackModal(true);
   }, []);

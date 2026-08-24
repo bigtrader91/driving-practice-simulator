@@ -19,6 +19,7 @@ export interface EvalResult {
 }
 
 const THROTTLE_MS = 3000;
+const HIGHWAY_LANE_WIDTH = 3.6;
 
 const inBounds = (
   x: number,
@@ -37,6 +38,9 @@ export class MissionEvaluator {
   private lastPenaltyAt = new Map<string, number>();
   private insideZones = new Set<string>();
   private zonePenalized = new Set<string>();
+  private processedEntries = new Set<string>();
+  private rearGaps = new Map<string, number>();
+  private currentLane?: number;
   private failed = false;
   private failMessage?: string;
   private seq = 0;
@@ -87,24 +91,24 @@ export class MissionEvaluator {
     });
   }
 
-  /** 기존 SimulationCanvas 인라인 로직 이관 (값 유지) */
+  /** 기존 SimulationCanvas 판정 조건을 이관하고 미션별 objective 감점을 적용한다. */
   private checkSignalAndMirror(car: CarState): void {
     if (!(Math.abs(car.steerAngle) > 0.12 && Math.abs(car.speed) > 15)) return;
     const left = car.steerAngle < 0;
     const correctSignal = left ? car.turnSignal === 'left' : car.turnSignal === 'right';
     const correctMirror = left ? car.leftMirrorLooked : car.rightMirrorLooked;
-    if (!correctSignal) this.raiseGeneric('방향지시등(깜빡이) 미작동 차선 변경 감점', 10);
-    if (!correctMirror) this.raiseGeneric('사이드미러/사각지대 숄더체크 미확인 감점', 10);
-  }
-
-  private raiseGeneric(reason: string, points: number): void {
-    if (this.failed) return;
-    const t = this.now();
-    const last = this.lastPenaltyAt.get(reason);
-    if (last !== undefined && t - last < THROTTLE_MS) return;
-    this.lastPenaltyAt.set(reason, t);
-    this.seq += 1;
-    this.pending.push({ id: `eval_${this.seq}`, timestamp: t, reason, points });
+    const signalObjectiveId = ['signal_check', 'signal_before_change'].find((id) =>
+      this.mission.objectives.some((objective) => objective.id === id),
+    );
+    const mirrorObjectiveId = ['shoulder_check', 'mirror_check'].find((id) =>
+      this.mission.objectives.some((objective) => objective.id === id),
+    );
+    if (!correctSignal && signalObjectiveId) {
+      this.raise(signalObjectiveId, signalObjectiveId);
+    }
+    if (!correctMirror && mirrorObjectiveId) {
+      this.raise(mirrorObjectiveId, mirrorObjectiveId);
+    }
   }
 
   private checkSchoolZones(car: CarState): void {
@@ -142,14 +146,36 @@ export class MissionEvaluator {
 
   private checkYieldOnMerge(ctx: EvalContext): void {
     const car = ctx.carState;
-    if (car.speedMs <= 3) return;
-    const risky = ctx.traffic.some(
-      (tv) =>
-        tv.behavior === 'aggressive' &&
-        tv.z - car.z > 0 &&
-        tv.z - car.z < 25 &&
-        Math.abs(tv.x - car.x) < 2.6,
+    const laneCount = this.mission.laneCount;
+    if (!laneCount) return;
+    const lane = Math.max(
+      0,
+      Math.min(laneCount - 1, Math.round(car.x / HIGHWAY_LANE_WIDTH + (laneCount - 1) / 2)),
     );
+    const previousLane = this.currentLane;
+    this.currentLane = lane;
+
+    const currentGaps = new Map(ctx.traffic.map((tv) => [tv.id, tv.z - car.z]));
+    if (previousLane === undefined || lane === previousLane || car.speedMs <= 3) {
+      this.rearGaps = currentGaps;
+      return;
+    }
+
+    const risky = ctx.traffic.some(
+      (tv) => {
+        const gap = currentGaps.get(tv.id)!;
+        const previousGap = this.rearGaps.get(tv.id);
+        return (
+          tv.behavior === 'aggressive' &&
+          tv.targetLane === lane &&
+          gap > 0 &&
+          gap < 25 &&
+          previousGap !== undefined &&
+          gap < previousGap
+        );
+      },
+    );
+    this.rearGaps = currentGaps;
     if (risky) this.raise('yield_check', 'yield_check');
   }
 
@@ -158,28 +184,39 @@ export class MissionEvaluator {
     if (!inter) return;
     const car = ctx.carState;
     const inside = inBounds(car.x, car.z, inter.bounds);
-    const turningLeft = car.turnSignal === 'left' || car.steerAngle < -0.15;
-    if (!inside || !turningLeft) return;
+    const key = 'unprotected_left_entry';
+    if (!inside) {
+      this.processedEntries.delete(key);
+      return;
+    }
+    if (car.speedMs <= 1 || car.x >= inter.bounds.x || this.processedEntries.has(key)) return;
+    this.processedEntries.add(key);
     const oncomingClose = ctx.traffic.some(
       (tv) =>
-        tv.motion !== 'orbit' &&
-        tv.behavior !== 'circulating' &&
-        tv.x < 0 &&
+        tv.motion === 'oncoming' &&
+        tv.z < car.z &&
         Math.hypot(tv.x - car.x, tv.z - car.z) < 30,
     );
-    if (oncomingClose) this.raise('unprotected_left', 'unprotected_left', 5000);
+    if (oncomingClose) this.raise('unprotected_left', key, 1);
   }
 
   private checkRoundaboutYield(ctx: EvalContext): void {
     const rb = (this.mission.zones ?? []).find((z) => z.type === 'roundabout');
     if (!rb) return;
     const car = ctx.carState;
-    if (!inBounds(car.x, car.z, rb.bounds)) return;
+    const key = 'roundabout_entry';
+    if (!inBounds(car.x, car.z, rb.bounds)) {
+      this.processedEntries.delete(key);
+      return;
+    }
+    const entryX = rb.bounds.x + rb.bounds.width / 3;
+    if (car.speedMs <= 1 || car.x >= entryX || this.processedEntries.has(key)) return;
+    this.processedEntries.add(key);
     const circulatingNear = ctx.traffic.some(
       (tv) =>
         tv.behavior === 'circulating' &&
         Math.hypot(tv.x - car.x, tv.z - car.z) < 15,
     );
-    if (circulatingNear) this.raise('roundabout_yield', 'roundabout_yield', 5000);
+    if (circulatingNear) this.raise('roundabout_yield', key, 1);
   }
 }

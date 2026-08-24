@@ -15,6 +15,7 @@ import { buildTrackScene, CollisionObstacle, TrafficSignalRig } from './TrackBui
 import { TrajectoryGuideRenderer } from './TireTracksOverlay';
 import { TrafficLightController } from '../../simulation/TrafficLightController';
 import { MissionEvaluator } from '../../simulation/MissionEvaluator';
+import { MissionRunState } from '../../simulation/MissionRunState';
 import { sounds } from '../../audio/soundEffects';
 
 interface SimulationCanvasProps {
@@ -26,7 +27,7 @@ interface SimulationCanvasProps {
   inputsRef: React.MutableRefObject<ControlInputs>;
   onStateUpdate: (state: CarState, sensors: ProximitySensorData, trafficData?: TrafficVehicleData[]) => void;
   onMissionComplete: (score: number, deductions: ScoreDeduction[]) => void;
-  onMissionFail: (reason: string) => void;
+  onMissionFail: (reason: string, score: number, deductions: ScoreDeduction[]) => void;
   onPenalty: (deduction: ScoreDeduction) => void;
   leftMirrorCanvasRef?: React.RefObject<HTMLCanvasElement | null>;
   rightMirrorCanvasRef?: React.RefObject<HTMLCanvasElement | null>;
@@ -51,9 +52,6 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
   backupCameraCanvasRef,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const isMissionFinishedRef = useRef(false);
-  const scoreDeductionsRef = useRef<ScoreDeduction[]>([]);
-  const currentScoreRef = useRef(100);
   // UI 토글은 effect를 재실행하지 않고 ref로 미러링한다 (C/T키 리셋 버그 수정)
   const uiStateRef = useRef({ cameraMode, showTrajectory, showWidthGuide });
   uiStateRef.current = { cameraMode, showTrajectory, showWidthGuide };
@@ -128,6 +126,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
 
     const lightController = mission.id === 'city_traffic' ? new TrafficLightController() : null;
     const evaluator = new MissionEvaluator(mission);
+    const runState = new MissionRunState();
 
     const trafficVehicles: TrafficVehicleData[] = [...initialTraffic];
     const trafficMeshes: {
@@ -234,10 +233,6 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
       odometer: 0,
     };
 
-    isMissionFinishedRef.current = false;
-    scoreDeductionsRef.current = [];
-    currentScoreRef.current = 100;
-
     let headYaw = 0;
     let headPitch = 0;
     let blinkerTimer = 0;
@@ -259,8 +254,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
     }, 1200);
 
     const applyPenalty = (deduction: ScoreDeduction) => {
-      scoreDeductionsRef.current.push(deduction);
-      currentScoreRef.current = Math.max(0, currentScoreRef.current - deduction.points);
+      if (!runState.applyPenalty(deduction)) return;
       sounds.playWarning();
       sounds.speakInstructor(`주의! ${deduction.reason}`);
       onPenalty(deduction);
@@ -268,7 +262,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
 
     const triggerPenalty = (reason: string, points: number) => {
       const now = performance.now();
-      const existing = scoreDeductionsRef.current.find((d) => d.reason === reason && now - d.timestamp < 3000);
+      const existing = runState.deductions.find((d) => d.reason === reason && now - d.timestamp < 3000);
       if (existing) return;
       applyPenalty({
         id: Math.random().toString(36).substring(2, 9),
@@ -281,6 +275,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
     let animationFrameId: number;
 
     const animate = (currentTime: number) => {
+      if (runState.isFinished) return;
       animationFrameId = requestAnimationFrame(animate);
       const delta = Math.min((currentTime - lastTime) / 1000, 0.05);
       lastTime = currentTime;
@@ -604,11 +599,12 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
       });
       evalResult.penalties.forEach(applyPenalty);
 
-      if (evalResult.failReason && !isMissionFinishedRef.current) {
-        isMissionFinishedRef.current = true;
+      if (evalResult.failReason) {
+        const failure = runState.finishFailure(evalResult.failReason);
+        if (!failure) return;
         sounds.playWarning();
         sounds.speakInstructor(`미션 실패! ${evalResult.failReason}`);
-        onMissionFail(evalResult.failReason);
+        onMissionFail(failure.reason, failure.score, failure.deductions);
       }
 
       // 신호등 램프 렌더링
@@ -622,7 +618,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
       }
 
       // Mission Goal Check
-      if (mission.targetArea && !isMissionFinishedRef.current) {
+      if (mission.targetArea && !runState.isFinished) {
         const { x: tx, z: tz, width: tw, depth: td, targetHeading, toleranceHeading } = mission.targetArea;
         const inZone = Math.abs(carState.x - tx) < tw / 2 && Math.abs(carState.z - tz) < td / 2;
 
@@ -638,17 +634,19 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
               if (carState.gear === 'P' && Math.abs(carState.speed) === 0) {
                 parkingHoldTimer += delta;
                 if (parkingHoldTimer >= 1.5) {
-                  isMissionFinishedRef.current = true;
+                  const result = runState.finishSuccess();
+                  if (!result) return;
                   sounds.playSuccess();
                   sounds.speakInstructor('축하합니다! 완벽하게 주차를 완료했습니다.');
-                  onMissionComplete(currentScoreRef.current, scoreDeductionsRef.current);
+                  onMissionComplete(result.score, result.deductions);
                 }
               }
             } else {
-              isMissionFinishedRef.current = true;
+              const result = runState.finishSuccess();
+              if (!result) return;
               sounds.playSuccess();
               sounds.speakInstructor('축하합니다! 미션을 성공적으로 완주했습니다.');
-              onMissionComplete(currentScoreRef.current, scoreDeductionsRef.current);
+              onMissionComplete(result.score, result.deductions);
             }
           }
         } else {
