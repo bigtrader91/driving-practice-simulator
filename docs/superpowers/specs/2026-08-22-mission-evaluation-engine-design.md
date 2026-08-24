@@ -55,14 +55,24 @@ city 분기(`else` 브랜치)를 `city_lane_change`용 기존 직선 도로와
 ```ts
 type LightPhase = 'green' | 'yellow' | 'red';
 class TrafficLightController {
-  constructor(greenSec = 10, yellowSec = 3, redSec = 8)
   update(dt: number): void          // 내부 타이머 진행
-  getPhase(axis: 'NS' | 'EW'): LightPhase  // NS/EW는 항상 반대 위상
+  getPhase(axis: 'NS' | 'EW'): LightPhase
 }
 ```
 
 - 프레임 독립 순수 상태머신. Three.js 의존 zero.
-- 주기: green 10s → yellow 3s → red 8s (한 axis 기준).
+- 주기: 아래 28초 위상표를 반복한다. 한 축이 녹색 또는 황색이면 다른 축은
+  반드시 적색이고, 축 전환 전에는 1초간 전방향 적색을 유지한다.
+
+| 주기 시간 | NS | EW |
+|---|---|---|
+| 0s 이상 10s 미만 | green | red |
+| 10s 이상 13s 미만 | yellow | red |
+| 13s 이상 14s 미만 | red | red |
+| 14s 이상 24s 미만 | red | green |
+| 24s 이상 27s 미만 | red | yellow |
+| 27s 이상 28s 미만 | red | red |
+
 - 판정 규칙: **적색 통과만 위반**. 황색 진입은 허용 (현실 단순화).
 
 ## 5. MissionEvaluator (`src/simulation/MissionEvaluator.ts`)
@@ -143,8 +153,10 @@ animate 루프가 ref를 읽게 변경. effect는 vehicle/mission 변경 시에�
 
 ## 9. 테스트 계획 (vitest 신설)
 
-- devDependency로 vitest 추가, `src/simulation/*.test.ts`만 작성.
-- TrafficLightController: 위상 전환 시퀀스, NS/EW 반대 위상, dt 누적.
+- devDependency로 vitest 추가. simulation 상태머신·판정과 TrackBuilder의 신호 rig
+  구조를 자동 검증하고, 실제 표시 상태는 브라우저에서 확인한다.
+- TrafficLightController: 28초 위상 전환 경계, 전방향 적색 구간, dt 누적·순환.
+- TrackBuilder: NS/EW별 독립 신호 rig 수, 교차로 위치, 접근 방향.
 - MissionEvaluator:
   - 학교구역 초과속도 → 진입당 1회 감점, 재진입 시 재감점
   - 적색 정지선 통과 → failReason 반환

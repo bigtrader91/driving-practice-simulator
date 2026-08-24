@@ -1,38 +1,43 @@
 export type LightPhase = 'green' | 'yellow' | 'red';
 export type LightAxis = 'NS' | 'EW';
 
+interface LightStage {
+  durationSec: number;
+  NS: LightPhase;
+  EW: LightPhase;
+}
+
+const LIGHT_STAGES: readonly LightStage[] = [
+  { durationSec: 10, NS: 'green', EW: 'red' },
+  { durationSec: 3, NS: 'yellow', EW: 'red' },
+  { durationSec: 1, NS: 'red', EW: 'red' },
+  { durationSec: 10, NS: 'red', EW: 'green' },
+  { durationSec: 3, NS: 'red', EW: 'yellow' },
+  { durationSec: 1, NS: 'red', EW: 'red' },
+];
+
+const CYCLE_SECONDS = LIGHT_STAGES.reduce((total, stage) => total + stage.durationSec, 0);
+
 /**
  * N-S / E-W 신호 상태머신. 프레임 독립적이며 Three.js 의존이 없다.
- * 타임라인(한 axis 기준): green(greenSec) → yellow(yellowSec) → red(redSec)
- * EW는 NS보다 (greenSec+yellowSec) 뒤에 같은 시퀀스로 진행된다.
+ * 한 축이 녹색 또는 황색인 동안 다른 축은 적색이며, 축 전환 전 1초간
+ * 전방향 적색 상태를 유지한다.
  */
 export class TrafficLightController {
   private timer = 0;
 
-  constructor(
-    private readonly greenSec = 10,
-    private readonly yellowSec = 3,
-    private readonly redSec = 8,
-  ) {}
-
   update(dt: number): void {
     if (dt <= 0) return;
-    const cycle = this.greenSec + this.yellowSec + this.redSec;
-    this.timer = (this.timer + dt) % cycle;
+    this.timer = (this.timer + dt) % CYCLE_SECONDS;
   }
 
   getPhase(axis: LightAxis): LightPhase {
-    const { greenSec: g, yellowSec: y, redSec: r } = this;
-    const cycle = g + y + r;
-    if (axis === 'NS') {
-      if (this.timer < g) return 'green';
-      if (this.timer < g + y) return 'yellow';
-      return 'red';
+    let stageEnd = 0;
+    for (const stage of LIGHT_STAGES) {
+      stageEnd += stage.durationSec;
+      if (this.timer < stageEnd) return stage[axis];
     }
-    const ewGreen = r - y;
-    const t = (this.timer - (g + y) + cycle) % cycle;
-    if (t < ewGreen) return 'green';
-    if (t < ewGreen + y) return 'yellow';
-    return 'red';
+
+    throw new Error('Traffic light timer is outside the configured cycle');
   }
 }
