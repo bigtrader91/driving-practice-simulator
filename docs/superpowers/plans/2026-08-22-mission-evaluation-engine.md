@@ -133,6 +133,10 @@ git commit -m "feat: MissionZone/motion/orbit 타입 추가"
 
 ### Task 3: TrafficLightController (TDD)
 
+> **2026-08-25 계약 변경:** 이 Task에 남아 있는 21초 주기와 configurable
+> constructor 예시는 이슈 #3에서 폐기되었다. 현재 계약은 설계 문서 §4와
+> `src/simulation/TrafficLightController.ts`의 28초 위상표를 따른다.
+
 **Files:**
 - Test: `src/simulation/TrafficLightController.test.ts`
 - Create: `src/simulation/TrafficLightController.ts`

@@ -596,7 +596,7 @@ export const buildTrackScene = (mission: Mission): {
       group.add(stripe);
     }
 
-    // ── 신호등 폴대 ×4 (NS/EW rig 각 1식) ──
+    // ── 신호등 폴대 ×4 (NS/EW 접근 방향별 2기) ──
     const mkSignal = (axis: 'NS' | 'EW', px: number, pz: number, rotY: number): TrafficSignalRig => {
       const poleG = new THREE.Group();
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 5.2, 10), guardrailMat);
@@ -625,8 +625,10 @@ export const buildTrackScene = (mission: Mission): {
 
     // 상단에서 hoist된 signals 배열에 추가
     signals.push(
-      mkSignal('NS', 13.0, 38.5, Math.PI),      // 남향 접근(우측 코너)
-      mkSignal('EW', -13.0, 21.5, Math.PI / 2), // 서향 가지도로 접근
+      mkSignal('NS', 13.0, 38.5, 0),             // 남향 접근
+      mkSignal('NS', -13.0, 21.5, Math.PI),       // 북향 접근
+      mkSignal('EW', -13.0, 38.5, -Math.PI / 2), // 동향 접근
+      mkSignal('EW', 13.0, 21.5, Math.PI / 2),   // 서향 접근
     );
 
     // ── 회전교차로 (중심 (-80,30)) ──
