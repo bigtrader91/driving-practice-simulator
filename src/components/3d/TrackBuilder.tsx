@@ -14,15 +14,26 @@ export interface CollisionObstacle {
   isPenaltyTrigger?: boolean;
 }
 
+export interface TrafficSignalRig {
+  axis: 'NS' | 'EW';
+  lamps: {
+    red: THREE.MeshStandardMaterial;
+    yellow: THREE.MeshStandardMaterial;
+    green: THREE.MeshStandardMaterial;
+  };
+}
+
 export const buildTrackScene = (mission: Mission): {
   trackGroup: THREE.Group;
   obstacles: CollisionObstacle[];
   initialTraffic: TrafficVehicleData[];
   goalMesh?: THREE.Mesh;
+  signals: TrafficSignalRig[];
 } => {
   const group = new THREE.Group();
   const obstacles: CollisionObstacle[] = [];
   const initialTraffic: TrafficVehicleData[] = [];
+  const signals: TrafficSignalRig[] = [];
 
   const textureLoader = new THREE.TextureLoader();
 
@@ -498,7 +509,186 @@ export const buildTrackScene = (mission: Mission): {
     group.add(pLine);
     group.add(pLineRear);
 
-  } else {
+  } else if (mission.id === 'city_traffic') {
+    // ── 본선(N-S 24m 폭, 기존 직선 도로 재사용) ──
+    const mainRoad = new THREE.Mesh(new THREE.PlaneGeometry(24, 320), asphaltMat);
+    mainRoad.rotation.x = -Math.PI / 2;
+    group.add(mainRoad);
+
+    [-0.2, 0.2].forEach((lx) => {
+      const yl = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 320), laneYellowMat);
+      yl.rotation.x = -Math.PI / 2;
+      yl.position.set(lx, 0.02, 0);
+      group.add(yl);
+    });
+
+    [-8, -4, 4, 8].forEach((lx) => {
+      for (let lz = 150; lz >= -150; lz -= 8) {
+        const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 4), laneWhiteMat);
+        dash.rotation.x = -Math.PI / 2;
+        dash.position.set(lx, 0.02, lz);
+        group.add(dash);
+      }
+    });
+
+    // ── 도로변 연석: 동측은 풀 길이, 서측은 가지도로 진입구(z 20~40) 개방 ──
+    const eastCurb = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.2, 320), curbMat);
+    eastCurb.position.set(12.2, 0.1, 0);
+    group.add(eastCurb);
+    obstacles.push({ type: 'box', x: 12.2, z: 0, width: 0.4, depth: 320, name: '도로변 보도블록', isPenaltyTrigger: true });
+
+    // 서측 연석 2분절: z∈[-160,20) 과 (40,160] — 좌회전 경로 확보
+    [[-70, 180], [100, 120]].forEach(([cz, cd]) => {
+      const westCurb = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.2, cd), curbMat);
+      westCurb.position.set(-12.2, 0.1, cz);
+      group.add(westCurb);
+      obstacles.push({ type: 'box', x: -12.2, z: cz, width: 0.4, depth: cd, name: '도로변 보도블록', isPenaltyTrigger: true });
+    });
+
+    // 가지도로·출구도로 가장자리 연석 (잔디 이탈 방지) — 튜플 순서: [x, z, sizeX, sizeZ]
+    const edgeCurbs: [number, number, number, number][] = [
+      [-39, 21.85, 54, 0.3],   // 가지도로 북연
+      [-39, 38.15, 54, 0.3],   // 가지도로 남연
+      [-86.85, 72, 0.3, 52],   // 출구도로 서연
+      [-73.15, 72, 0.3, 52],   // 출구도로 동연
+    ];
+    edgeCurbs.forEach(([ex, ez, ew, ed]) => {
+      const c = new THREE.Mesh(new THREE.BoxGeometry(ew, 0.2, ed), curbMat);
+      c.position.set(ex, 0.1, ez);
+      group.add(c);
+      obstacles.push({ type: 'box', x: ex, z: ez, width: ew, depth: ed, name: '가지도로 연석', isPenaltyTrigger: true });
+    });
+
+    // ── 어린이보호구역 데칼 (z 60~100) ──
+    const schoolZoneTex = RoadTextureGenerator.createSchoolZoneTexture();
+    [95, 65].forEach((sz) => {
+      const decal = new THREE.Mesh(
+        new THREE.PlaneGeometry(10, 5),
+        new THREE.MeshBasicMaterial({ map: schoolZoneTex, transparent: true })
+      );
+      decal.rotation.x = -Math.PI / 2;
+      decal.position.set(6, 0.025, sz);
+      group.add(decal);
+    });
+
+    // ── 서측 가지도로 (비보호 좌회전 진출, z∈[22,38], x -66~-12) ──
+    const branch = new THREE.Mesh(new THREE.PlaneGeometry(54, 16), asphaltMat);
+    branch.rotation.x = -Math.PI / 2;
+    branch.position.set(-39, 0.01, 30);
+    group.add(branch);
+
+    // ── 북측 출구 도로 (회전교차로 → 목표, x∈[-87,-73]) ──
+    const exitRoad = new THREE.Mesh(new THREE.PlaneGeometry(14, 52), asphaltMat);
+    exitRoad.rotation.x = -Math.PI / 2;
+    exitRoad.position.set(-80, 0.01, 72);
+    group.add(exitRoad);
+
+    // ── 정지선 + 횡단보도 ──
+    const stopLine = new THREE.Mesh(new THREE.PlaneGeometry(11, 0.45), laneWhiteMat);
+    stopLine.rotation.x = -Math.PI / 2;
+    stopLine.position.set(5.5, 0.03, 36);
+    group.add(stopLine);
+
+    for (let sx = -10; sx <= 10; sx += 2.5) {
+      const stripe = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 3.6), laneWhiteMat);
+      stripe.rotation.x = -Math.PI / 2;
+      stripe.position.set(sx, 0.03, 41.5);
+      group.add(stripe);
+    }
+
+    // ── 신호등 폴대 ×4 (NS/EW rig 각 1식) ──
+    const mkSignal = (axis: 'NS' | 'EW', px: number, pz: number, rotY: number): TrafficSignalRig => {
+      const poleG = new THREE.Group();
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 5.2, 10), guardrailMat);
+      pole.position.y = 2.6;
+      poleG.add(pole);
+      const housing = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.5, 0.35), new THREE.MeshStandardMaterial({ color: 0x111827 }));
+      housing.position.y = 5.4;
+      poleG.add(housing);
+      const mkLamp = (color: number, ly: number) => {
+        const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.05 });
+        const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 12), mat);
+        lamp.position.set(0, ly, 0.2);
+        poleG.add(lamp);
+        return mat;
+      };
+      const lamps = {
+        red: mkLamp(0xff2222, 5.85),
+        yellow: mkLamp(0xffcc00, 5.4),
+        green: mkLamp(0x22dd44, 4.95),
+      };
+      poleG.position.set(px, 0, pz);
+      poleG.rotation.y = rotY;
+      group.add(poleG);
+      return { axis, lamps };
+    };
+
+    // 상단에서 hoist된 signals 배열에 추가
+    signals.push(
+      mkSignal('NS', 13.0, 38.5, Math.PI),      // 남향 접근(우측 코너)
+      mkSignal('EW', -13.0, 21.5, Math.PI / 2), // 서향 가지도로 접근
+    );
+
+    // ── 회전교차로 (중심 (-80,30)) ──
+    const island = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 0.4, 32), grassMat);
+    island.position.set(-80, 0.2, 30);
+    group.add(island);
+    obstacles.push({ type: 'cylinder', x: -80, z: 30, radius: 6, name: '회전교차로 중앙섬', isPenaltyTrigger: true });
+
+    const ring = new THREE.Mesh(new THREE.RingGeometry(6, 16, 48), asphaltMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(-80, 0.01, 30);
+    group.add(ring);
+
+    // 가지도로/출구가 링과 만나는 구멍 메우기 (링 위 덧판)
+    const joinW = new THREE.Mesh(new THREE.PlaneGeometry(22, 16), asphaltMat);
+    joinW.rotation.x = -Math.PI / 2;
+    joinW.position.set(-71, 0.012, 30);
+    group.add(joinW);
+    const joinN = new THREE.Mesh(new THREE.PlaneGeometry(16, 22), asphaltMat);
+    joinN.rotation.x = -Math.PI / 2;
+    joinN.position.set(-80, 0.012, 37);
+    group.add(joinN);
+
+    // ── 주변 배경 ──
+    for (let bz = 130; bz >= -130; bz -= 35) {
+      createSkyscraper(-26, bz, 18, 22, 25 + Math.random() * 30);
+      createSkyscraper(26, bz, 18, 22, 25 + Math.random() * 30);
+      if (bz % 70 === 0) {
+        createStreetLight(13, bz, true);
+        createTree(-15, bz + 10);
+        createTree(15, bz - 10);
+      }
+    }
+    [[-39, 12], [-39, 48], [-95, 60], [-65, 60]].forEach(([tx, tz]) => createTree(tx, tz));
+
+    // ── 온커밍 차량 (x<0 차로, +Z 방향) ──
+    const oncomingCfg = [
+      { x: -6, z: -60, speed: 48, color: 0x2563eb },
+      { x: -2, z: -110, speed: 42, color: 0xdc2626 },
+      { x: -6, z: -160, speed: 55, color: 0x059669 },
+    ];
+    oncomingCfg.forEach((cfg, idx) => {
+      initialTraffic.push({
+        id: `oncoming_${idx}`, x: cfg.x, z: cfg.z, speedKmH: cfg.speed,
+        targetLane: 0, laneX: cfg.x, color: cfg.color, type: 'sedan',
+        behavior: 'normal', isYielding: false, isHonking: false, isFlashingHighBeam: false,
+        motion: 'oncoming',
+      });
+    });
+
+    // ── 회전교차로 순환 차량 ──
+    [0, Math.PI].forEach((angle, idx) => {
+      initialTraffic.push({
+        id: `orb_${idx}`, x: -80 + Math.cos(angle) * 11, z: 30 + Math.sin(angle) * 11,
+        speedKmH: 25, targetLane: 0, laneX: -80, color: 0xd97706, type: 'suv',
+        behavior: 'circulating', isYielding: false, isHonking: false, isFlashingHighBeam: false,
+        motion: 'orbit',
+        orbit: { cx: -80, cz: 30, radius: 11, angle, angularSpeed: 0.35, direction: 1 },
+      });
+    });
+
+  } else if (mission.id === 'city_lane_change') {
     // City Driving Track with School Zone & Intersection Decals
     const mainRoad = new THREE.Mesh(new THREE.PlaneGeometry(24, 320), asphaltMat);
     mainRoad.rotation.x = -Math.PI / 2;
@@ -556,5 +746,6 @@ export const buildTrackScene = (mission: Mission): {
     obstacles,
     initialTraffic,
     goalMesh,
+    signals,
   };
 };

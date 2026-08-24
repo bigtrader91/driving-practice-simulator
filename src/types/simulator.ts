@@ -85,12 +85,20 @@ export interface ControlInputs {
 
 export type MissionCategory = 'basic' | 'width' | 'curve' | 'parking' | 'traffic' | 'highway';
 
-export interface MissionObjective {
+export type MissionObjective = {
   id: string;
   text: string;
   isCompleted: boolean;
   isMandatory: boolean;
   scorePenalty: number;
+};
+
+export type MissionZoneType = 'school' | 'intersection' | 'roundabout';
+
+export interface MissionZone {
+  type: MissionZoneType;
+  bounds: { x: number; z: number; width: number; depth: number };
+  speedLimit?: number;
 }
 
 export interface Mission {
@@ -115,6 +123,8 @@ export interface Mission {
   maxScore: number;
   objectives: MissionObjective[];
   laneCount?: number;
+  zones?: MissionZone[];
+  stopLine?: { z: number }; // 적색 판정 기준선 (city_traffic)
 }
 
 export interface ScoreDeduction {
@@ -134,7 +144,18 @@ export interface ProximitySensorData {
   minDistance: number;
 }
 
-export type TrafficDriverBehavior = 'yielding' | 'aggressive' | 'normal';
+export type TrafficDriverBehavior = 'yielding' | 'aggressive' | 'normal' | 'circulating';
+
+export type TrafficMotion = 'forward' | 'oncoming' | 'orbit';
+
+export interface OrbitConfig {
+  cx: number;
+  cz: number;
+  radius: number;
+  angle: number;
+  angularSpeed: number; // rad/s
+  direction: 1 | -1;
+}
 
 export interface TrafficVehicleData {
   id: string;
@@ -149,5 +170,6 @@ export interface TrafficVehicleData {
   isYielding: boolean;
   isHonking: boolean;
   isFlashingHighBeam: boolean;
-  meshGroup?: any;
+  motion?: TrafficMotion;
+  orbit?: OrbitConfig;
 }

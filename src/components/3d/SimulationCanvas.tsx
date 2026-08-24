@@ -11,8 +11,11 @@ import {
   TrafficVehicleData,
 } from '../../types/simulator';
 import { createCar3DGroup } from './CarModel';
-import { buildTrackScene, CollisionObstacle } from './TrackBuilder';
+import { buildTrackScene, CollisionObstacle, TrafficSignalRig } from './TrackBuilder';
 import { TrajectoryGuideRenderer } from './TireTracksOverlay';
+import { TrafficLightController } from '../../simulation/TrafficLightController';
+import { MissionEvaluator } from '../../simulation/MissionEvaluator';
+import { MissionRunState } from '../../simulation/MissionRunState';
 import { sounds } from '../../audio/soundEffects';
 
 interface SimulationCanvasProps {
@@ -24,6 +27,7 @@ interface SimulationCanvasProps {
   inputsRef: React.MutableRefObject<ControlInputs>;
   onStateUpdate: (state: CarState, sensors: ProximitySensorData, trafficData?: TrafficVehicleData[]) => void;
   onMissionComplete: (score: number, deductions: ScoreDeduction[]) => void;
+  onMissionFail: (reason: string, score: number, deductions: ScoreDeduction[]) => void;
   onPenalty: (deduction: ScoreDeduction) => void;
   leftMirrorCanvasRef?: React.RefObject<HTMLCanvasElement | null>;
   rightMirrorCanvasRef?: React.RefObject<HTMLCanvasElement | null>;
@@ -40,6 +44,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
   inputsRef,
   onStateUpdate,
   onMissionComplete,
+  onMissionFail,
   onPenalty,
   leftMirrorCanvasRef,
   rightMirrorCanvasRef,
@@ -47,9 +52,9 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
   backupCameraCanvasRef,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const isMissionFinishedRef = useRef(false);
-  const scoreDeductionsRef = useRef<ScoreDeduction[]>([]);
-  const currentScoreRef = useRef(100);
+  // UI 토글은 effect를 재실행하지 않고 ref로 미러링한다 (C/T키 리셋 버그 수정)
+  const uiStateRef = useRef({ cameraMode, showTrajectory, showWidthGuide });
+  uiStateRef.current = { cameraMode, showTrajectory, showWidthGuide };
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -116,8 +121,12 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
     scene.add(sunLight);
 
     // 3. Track Scene & Traffic
-    const { trackGroup, obstacles, initialTraffic } = buildTrackScene(mission);
+    const { trackGroup, obstacles, initialTraffic, signals } = buildTrackScene(mission);
     scene.add(trackGroup);
+
+    const lightController = mission.id === 'city_traffic' ? new TrafficLightController() : null;
+    const evaluator = new MissionEvaluator(mission);
+    const runState = new MissionRunState();
 
     const trafficVehicles: TrafficVehicleData[] = [...initialTraffic];
     const trafficMeshes: {
@@ -224,10 +233,6 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
       odometer: 0,
     };
 
-    isMissionFinishedRef.current = false;
-    scoreDeductionsRef.current = [];
-    currentScoreRef.current = 100;
-
     let headYaw = 0;
     let headPitch = 0;
     let blinkerTimer = 0;
@@ -248,27 +253,29 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
       sounds.speakInstructor(`${mission.title} 연습을 시작합니다. 안전 운전하세요.`);
     }, 1200);
 
+    const applyPenalty = (deduction: ScoreDeduction) => {
+      if (!runState.applyPenalty(deduction)) return;
+      sounds.playWarning();
+      sounds.speakInstructor(`주의! ${deduction.reason}`);
+      onPenalty(deduction);
+    };
+
     const triggerPenalty = (reason: string, points: number) => {
       const now = performance.now();
-      const existing = scoreDeductionsRef.current.find((d) => d.reason === reason && now - d.timestamp < 3000);
+      const existing = runState.deductions.find((d) => d.reason === reason && now - d.timestamp < 3000);
       if (existing) return;
-
-      const deduction: ScoreDeduction = {
+      applyPenalty({
         id: Math.random().toString(36).substring(2, 9),
         timestamp: now,
         reason,
         points,
-      };
-      scoreDeductionsRef.current.push(deduction);
-      currentScoreRef.current = Math.max(0, currentScoreRef.current - points);
-      sounds.playWarning();
-      sounds.speakInstructor(`주의! ${reason}`);
-      onPenalty(deduction);
+      });
     };
 
     let animationFrameId: number;
 
     const animate = (currentTime: number) => {
+      if (runState.isFinished) return;
       animationFrameId = requestAnimationFrame(animate);
       const delta = Math.min((currentTime - lastTime) / 1000, 0.05);
       lastTime = currentTime;
@@ -430,6 +437,26 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
       const isHighBeamFlash = Math.sin(highBeamTimer * 12) > 0;
 
       trafficMeshes.forEach(({ data: tv, group: tvG, headlights, brakeLights }) => {
+        // 회전교차로 순환 차량 — 원형 궤도 이동 후 조기 반환
+        if (tv.motion === 'orbit' && tv.orbit) {
+          tv.orbit.angle += tv.orbit.angularSpeed * tv.orbit.direction * delta;
+          tv.x = tv.orbit.cx + Math.cos(tv.orbit.angle) * tv.orbit.radius;
+          tv.z = tv.orbit.cz + Math.sin(tv.orbit.angle) * tv.orbit.radius;
+          tvG.position.set(tv.x, 0, tv.z);
+          tvG.rotation.y = -(tv.orbit.angle + (Math.PI / 2) * tv.orbit.direction);
+          return; // yield/aggressive 응답 스킵
+        }
+
+        // 온커밍 차량 — +Z 방향 주행 (비보호 좌회전 양보 대상)
+        if (tv.motion === 'oncoming') {
+          const tvSpeedMs = (tv.speedKmH * 1000) / 3600;
+          tv.z += tvSpeedMs * delta;
+          if (tv.z > 200) tv.z = -180 - Math.random() * 60;
+          tvG.position.set(tv.x, 0, tv.z);
+          tvG.rotation.y = Math.PI;
+          return;
+        }
+
         let currentTargetSpeed = tv.speedKmH;
 
         const zDiff = tv.z - carState.z;
@@ -563,22 +590,35 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
       carState.rightMirrorLooked = headYaw < -0.35;
       carState.rearMirrorLooked = inputs.lookRear;
 
-      // Lane Change Safety Check
-      if (Math.abs(carState.steerAngle) > 0.12 && Math.abs(carState.speed) > 15) {
-        const isTurningLeft = carState.steerAngle < 0;
-        const correctSignal = isTurningLeft ? carState.turnSignal === 'left' : carState.turnSignal === 'right';
-        const correctMirror = isTurningLeft ? carState.leftMirrorLooked : carState.rightMirrorLooked;
+      // Mission Evaluation (objectives-driven)
+      lightController?.update(delta);
+      const evalResult = evaluator.evaluate({
+        carState,
+        traffic: trafficVehicles,
+        lights: lightController,
+      });
+      evalResult.penalties.forEach(applyPenalty);
 
-        if (!correctSignal) {
-          triggerPenalty('방향지시등(깜빡이) 미작동 차선 변경 감점', 10);
-        }
-        if (!correctMirror) {
-          triggerPenalty('사이드미러/사각지대 숄더체크 미확인 감점', 10);
-        }
+      if (evalResult.failReason) {
+        const failure = runState.finishFailure(evalResult.failReason);
+        if (!failure) return;
+        sounds.playWarning();
+        sounds.speakInstructor(`미션 실패! ${evalResult.failReason}`);
+        onMissionFail(failure.reason, failure.score, failure.deductions);
+      }
+
+      // 신호등 램프 렌더링
+      if (lightController) {
+        signals.forEach((rig) => {
+          const phase = lightController.getPhase(rig.axis);
+          rig.lamps.red.emissiveIntensity = phase === 'red' ? 2.6 : 0.05;
+          rig.lamps.yellow.emissiveIntensity = phase === 'yellow' ? 2.6 : 0.05;
+          rig.lamps.green.emissiveIntensity = phase === 'green' ? 2.6 : 0.05;
+        });
       }
 
       // Mission Goal Check
-      if (mission.targetArea && !isMissionFinishedRef.current) {
+      if (mission.targetArea && !runState.isFinished) {
         const { x: tx, z: tz, width: tw, depth: td, targetHeading, toleranceHeading } = mission.targetArea;
         const inZone = Math.abs(carState.x - tx) < tw / 2 && Math.abs(carState.z - tz) < td / 2;
 
@@ -594,17 +634,19 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
               if (carState.gear === 'P' && Math.abs(carState.speed) === 0) {
                 parkingHoldTimer += delta;
                 if (parkingHoldTimer >= 1.5) {
-                  isMissionFinishedRef.current = true;
+                  const result = runState.finishSuccess();
+                  if (!result) return;
                   sounds.playSuccess();
                   sounds.speakInstructor('축하합니다! 완벽하게 주차를 완료했습니다.');
-                  onMissionComplete(currentScoreRef.current, scoreDeductionsRef.current);
+                  onMissionComplete(result.score, result.deductions);
                 }
               }
             } else {
-              isMissionFinishedRef.current = true;
+              const result = runState.finishSuccess();
+              if (!result) return;
               sounds.playSuccess();
               sounds.speakInstructor('축하합니다! 미션을 성공적으로 완주했습니다.');
-              onMissionComplete(currentScoreRef.current, scoreDeductionsRef.current);
+              onMissionComplete(result.score, result.deductions);
             }
           }
         } else {
@@ -612,14 +654,14 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
         }
       }
 
-      trajectoryRenderer.update(vehicle, carState, showTrajectory || showWidthGuide);
+      trajectoryRenderer.update(vehicle, carState, uiStateRef.current.showTrajectory || uiStateRef.current.showWidthGuide);
 
       // Camera Placement
       const [cpx, cpy, cpz] = vehicle.cockpitPos;
       const carPos = car3D.carGroup.position;
       const heading = carState.heading;
 
-      if (cameraMode === 'cockpit') {
+      if (uiStateRef.current.cameraMode === 'cockpit') {
         const eyeOffset = new THREE.Vector3(cpx, cpy + vibeOffset, cpz).applyAxisAngle(new THREE.Vector3(0, 1, 0), heading);
         mainCamera.position.copy(carPos).add(eyeOffset);
 
@@ -630,7 +672,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
         ).normalize();
         mainCamera.lookAt(mainCamera.position.clone().add(lookDir));
         mainCamera.rotation.z = camRollInertia;
-      } else if (cameraMode === 'chase') {
+      } else if (uiStateRef.current.cameraMode === 'chase') {
         const chaseDist = 6.8;
         const chaseHeight = 3.2 + vibeOffset;
         const camPos = new THREE.Vector3(
@@ -641,11 +683,11 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
         mainCamera.position.lerp(camPos, 10 * delta);
         mainCamera.lookAt(carPos.x, carPos.y + 1.2, carPos.z);
         mainCamera.rotation.z = 0;
-      } else if (cameraMode === 'top') {
+      } else if (uiStateRef.current.cameraMode === 'top') {
         mainCamera.position.set(carPos.x, carPos.y + 24, carPos.z);
         mainCamera.lookAt(carPos.x, carPos.y, carPos.z);
         mainCamera.rotation.z = 0;
-      } else if (cameraMode === 'hood') {
+      } else if (uiStateRef.current.cameraMode === 'hood') {
         const hoodOffset = new THREE.Vector3(0, vehicle.height * 0.65 + vibeOffset, vehicle.length * 0.35).applyAxisAngle(new THREE.Vector3(0, 1, 0), heading);
         mainCamera.position.copy(carPos).add(hoodOffset);
         const lookDir = new THREE.Vector3(-Math.sin(heading), 0, -Math.cos(heading));
@@ -711,7 +753,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
       rearMirrorRenderer?.dispose();
       backupRenderer?.dispose();
     };
-  }, [vehicle, mission, cameraMode, showTrajectory, showWidthGuide]);
+  }, [vehicle, mission]);
 
   return (
     <div ref={containerRef} className="w-full h-full relative cursor-crosshair overflow-hidden" />
