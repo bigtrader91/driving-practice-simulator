@@ -411,6 +411,10 @@ export const createCar3DGroup = (vehicle: VehicleConfig): {
   group.add(rearLeftWheel);
   group.add(rearRightWheel);
 
+  // Driving physics uses local -Z as forward. Reflect the authored +Z model
+  // so exterior details, lights, and cabin geometry follow that same contract.
+  group.scale.z = -1;
+
   return {
     carGroup: group,
     frontLeftWheel,

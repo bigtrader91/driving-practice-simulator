@@ -17,6 +17,16 @@ import { TrafficLightController } from '../../simulation/TrafficLightController'
 import { MissionEvaluator } from '../../simulation/MissionEvaluator';
 import { MissionRunState } from '../../simulation/MissionRunState';
 import { sounds } from '../../audio/soundEffects';
+import {
+  getBackupCameraOffset,
+  getForwardDirection,
+  getHoodCameraOffset,
+  getMirrorDirection,
+  getOrbitVehicleHeading,
+  getRearDirection,
+  getVisualWheelSteerRotation,
+  type MirrorView,
+} from './VehicleCoordinateSystem';
 
 interface SimulationCanvasProps {
   vehicle: VehicleConfig;
@@ -182,6 +192,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
       tvGroup.add(blRight);
 
       tvGroup.position.set(tv.x, 0, tv.z);
+      tvGroup.scale.z = -1;
       scene.add(tvGroup);
 
       trafficMeshes.push({
@@ -348,8 +359,9 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
 
       // In 3D: Rotate steering wheel and front wheels
       car3D.steeringWheelMesh.rotation.z = -carState.steeringWheelAngle;
-      car3D.frontLeftWheel.rotation.y = -carState.steerAngle;
-      car3D.frontRightWheel.rotation.y = -carState.steerAngle;
+      const visualWheelSteer = getVisualWheelSteerRotation(carState.steerAngle);
+      car3D.frontLeftWheel.rotation.y = visualWheelSteer;
+      car3D.frontRightWheel.rotation.y = visualWheelSteer;
 
       // Acceleration & Braking with Pitch Inertia
       carState.isBraking = (inputs.backward && carState.gear === 'D') || (inputs.forward && carState.gear === 'R') || inputs.handbrake;
@@ -443,7 +455,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
           tv.x = tv.orbit.cx + Math.cos(tv.orbit.angle) * tv.orbit.radius;
           tv.z = tv.orbit.cz + Math.sin(tv.orbit.angle) * tv.orbit.radius;
           tvG.position.set(tv.x, 0, tv.z);
-          tvG.rotation.y = -(tv.orbit.angle + (Math.PI / 2) * tv.orbit.direction);
+          tvG.rotation.y = getOrbitVehicleHeading(tv.orbit.angle, tv.orbit.direction);
           return; // yield/aggressive 응답 스킵
         }
 
@@ -665,21 +677,19 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
         const eyeOffset = new THREE.Vector3(cpx, cpy + vibeOffset, cpz).applyAxisAngle(new THREE.Vector3(0, 1, 0), heading);
         mainCamera.position.copy(carPos).add(eyeOffset);
 
-        const lookDir = new THREE.Vector3(
-          -Math.sin(heading + headYaw),
-          headPitch + camPitchInertia - 0.04,
-          -Math.cos(heading + headYaw)
-        ).normalize();
+        const lookDir = getForwardDirection(
+          heading + headYaw,
+          headPitch + camPitchInertia - 0.04
+        );
         mainCamera.lookAt(mainCamera.position.clone().add(lookDir));
         mainCamera.rotation.z = camRollInertia;
       } else if (uiStateRef.current.cameraMode === 'chase') {
         const chaseDist = 6.8;
         const chaseHeight = 3.2 + vibeOffset;
-        const camPos = new THREE.Vector3(
-          carPos.x + Math.sin(heading) * chaseDist,
-          carPos.y + chaseHeight,
-          carPos.z + Math.cos(heading) * chaseDist
-        );
+        const camPos = getRearDirection(heading)
+          .multiplyScalar(chaseDist)
+          .add(carPos);
+        camPos.y += chaseHeight;
         mainCamera.position.lerp(camPos, 10 * delta);
         mainCamera.lookAt(carPos.x, carPos.y + 1.2, carPos.z);
         mainCamera.rotation.z = 0;
@@ -688,9 +698,10 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
         mainCamera.lookAt(carPos.x, carPos.y, carPos.z);
         mainCamera.rotation.z = 0;
       } else if (uiStateRef.current.cameraMode === 'hood') {
-        const hoodOffset = new THREE.Vector3(0, vehicle.height * 0.65 + vibeOffset, vehicle.length * 0.35).applyAxisAngle(new THREE.Vector3(0, 1, 0), heading);
+        const hoodOffset = getHoodCameraOffset(vehicle, vibeOffset)
+          .applyAxisAngle(new THREE.Vector3(0, 1, 0), heading);
         mainCamera.position.copy(carPos).add(hoodOffset);
-        const lookDir = new THREE.Vector3(-Math.sin(heading), 0, -Math.cos(heading));
+        const lookDir = getForwardDirection(heading);
         mainCamera.lookAt(mainCamera.position.clone().add(lookDir));
         mainCamera.rotation.z = 0;
       }
@@ -701,28 +712,26 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
         mirrorRenderer: THREE.WebGLRenderer | null,
         mirrorCam: THREE.PerspectiveCamera,
         mPos: [number, number, number],
-        angleOffset: number
+        view: MirrorView
       ) => {
         if (!mirrorRenderer) return;
         const worldPos = new THREE.Vector3(...mPos).applyAxisAngle(new THREE.Vector3(0, 1, 0), heading).add(carPos);
         mirrorCam.position.copy(worldPos);
-        const mirrorDir = new THREE.Vector3(
-          Math.sin(heading + angleOffset),
-          -0.05,
-          Math.cos(heading + angleOffset)
-        ).normalize();
+        const mirrorDir = getMirrorDirection(heading, view);
         mirrorCam.lookAt(mirrorCam.position.clone().add(mirrorDir));
         mirrorRenderer.render(scene, mirrorCam);
       };
 
-      renderMirror(leftMirrorRenderer, leftMirrorCam, vehicle.leftMirrorPos, 0.12);
-      renderMirror(rightMirrorRenderer, rightMirrorCam, vehicle.rightMirrorPos, -0.12);
-      renderMirror(rearMirrorRenderer, rearMirrorCam, vehicle.rearMirrorPos, 0);
+      renderMirror(leftMirrorRenderer, leftMirrorCam, vehicle.leftMirrorPos, 'left');
+      renderMirror(rightMirrorRenderer, rightMirrorCam, vehicle.rightMirrorPos, 'right');
+      renderMirror(rearMirrorRenderer, rearMirrorCam, vehicle.rearMirrorPos, 'rear');
 
       if (backupRenderer && carState.gear === 'R') {
-        const backupPos = new THREE.Vector3(0, vehicle.height * 0.55, -vehicle.length * 0.48).applyAxisAngle(new THREE.Vector3(0, 1, 0), heading).add(carPos);
+        const backupPos = getBackupCameraOffset(vehicle)
+          .applyAxisAngle(new THREE.Vector3(0, 1, 0), heading)
+          .add(carPos);
         backupCam.position.copy(backupPos);
-        const backupDir = new THREE.Vector3(Math.sin(heading), -0.25, Math.cos(heading)).normalize();
+        const backupDir = getRearDirection(heading, -0.25);
         backupCam.lookAt(backupCam.position.clone().add(backupDir));
         backupRenderer.render(scene, backupCam);
       }
