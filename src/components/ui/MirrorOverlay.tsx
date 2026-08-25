@@ -92,32 +92,34 @@ export const MirrorOverlay: React.FC<MirrorOverlayProps> = ({
       </div>
 
       {/* 4. Backup Camera Screen (Active when Gear is 'R', Positioned Cleanly at Bottom Right above controls) */}
-      {gear === 'R' && (
-        <div className="absolute bottom-28 right-4 pointer-events-none animate-in fade-in zoom-in-95 duration-200">
-          <div className="relative border-4 border-emerald-500/80 bg-slate-950 rounded-2xl overflow-hidden shadow-2xl ring-2 ring-emerald-400/50">
-            <canvas
-              ref={backupCameraCanvasRef}
-              width={260}
-              height={160}
-              className="w-52 sm:w-64 h-32 sm:h-40 object-cover"
-            />
-            {/* Dynamic Parking Trajectory Guidelines */}
-            <div className="absolute inset-0 pointer-events-none flex flex-col justify-end items-center pb-2">
-              <div className="w-4/5 h-24 border-x-2 border-dashed border-yellow-400/90 flex flex-col justify-between items-center relative">
-                <div className="w-full h-0.5 bg-green-400 opacity-80" />
-                <div className="w-full h-0.5 bg-yellow-400 opacity-95" />
-                <div className="w-full h-1.5 bg-red-500 shadow-lg" />
-              </div>
-            </div>
-            <div className="absolute top-1.5 left-2 bg-red-600/90 text-white font-black text-[10px] px-2 py-0.5 rounded tracking-wide animate-pulse">
-              ● R 후방 카메라 & 가이드선
-            </div>
-            <div className="absolute bottom-1 left-2 text-[9px] text-yellow-300 bg-black/75 px-1.5 py-0.5 rounded font-bold">
-              🔴 50cm / 🟡 1m / 🟢 2m
+      <div
+        className={`absolute bottom-28 right-4 pointer-events-none ${
+          gear === 'R' ? 'animate-in fade-in zoom-in-95 duration-200' : 'hidden'
+        }`}
+      >
+        <div className="relative border-4 border-emerald-500/80 bg-slate-950 rounded-2xl overflow-hidden shadow-2xl ring-2 ring-emerald-400/50">
+          <canvas
+            ref={backupCameraCanvasRef}
+            width={260}
+            height={160}
+            className="w-52 sm:w-64 h-32 sm:h-40 object-cover"
+          />
+          {/* Dynamic Parking Trajectory Guidelines */}
+          <div className="absolute inset-0 pointer-events-none flex flex-col justify-end items-center pb-2">
+            <div className="w-4/5 h-24 border-x-2 border-dashed border-yellow-400/90 flex flex-col justify-between items-center relative">
+              <div className="w-full h-0.5 bg-green-400 opacity-80" />
+              <div className="w-full h-0.5 bg-yellow-400 opacity-95" />
+              <div className="w-full h-1.5 bg-red-500 shadow-lg" />
             </div>
           </div>
+          <div className="absolute top-1.5 left-2 bg-red-600/90 text-white font-black text-[10px] px-2 py-0.5 rounded tracking-wide animate-pulse">
+            ● R 후방 카메라 & 가이드선
+          </div>
+          <div className="absolute bottom-1 left-2 text-[9px] text-yellow-300 bg-black/75 px-1.5 py-0.5 rounded font-bold">
+            🔴 50cm / 🟡 1m / 🟢 2m
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };
