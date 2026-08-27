@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import * as THREE from 'three';
+import { releaseTransientInputs } from './simulation/InputSafety';
 import {
   VehicleConfig,
   CarState,
@@ -158,6 +159,16 @@ export const App: React.FC = () => {
         case 'ArrowDown':
           inputs.backward = true;
           break;
+        case 'ArrowLeft':
+          inputs.steerLeft = true;
+          inputs.isMouseSteeringActive = false;
+          e.preventDefault();
+          break;
+        case 'ArrowRight':
+          inputs.steerRight = true;
+          inputs.isMouseSteeringActive = false;
+          e.preventDefault();
+          break;
 
         // Gears (Fixed: D key is Drive!)
         case 'KeyD':
@@ -234,6 +245,12 @@ export const App: React.FC = () => {
         case 'ArrowDown':
           inputs.backward = false;
           break;
+        case 'ArrowLeft':
+          inputs.steerLeft = false;
+          break;
+        case 'ArrowRight':
+          inputs.steerRight = false;
+          break;
         case 'KeyD':
         case 'Digit4':
           inputs.gearD = false;
@@ -265,10 +282,18 @@ export const App: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    const releaseInputs = () => releaseTransientInputs(inputsRef.current);
+    const handleVisibilityChange = () => {
+      if (document.hidden) releaseInputs();
+    };
+    window.addEventListener('blur', releaseInputs);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', releaseInputs);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 
@@ -322,6 +347,7 @@ export const App: React.FC = () => {
         onMissionComplete={handleMissionComplete}
         onMissionFail={handleMissionFail}
         onPenalty={handlePenalty}
+        onReset={handleResetCar}
         leftMirrorCanvasRef={leftMirrorCanvasRef}
         rightMirrorCanvasRef={rightMirrorCanvasRef}
         rearMirrorCanvasRef={rearMirrorCanvasRef}

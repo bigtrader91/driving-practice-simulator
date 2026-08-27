@@ -36,17 +36,22 @@ export class TrajectoryGuideRenderer {
     this.group.add(this.widthGuideMesh);
   }
 
-  public update(vehicle: VehicleConfig, carState: CarState, isVisible: boolean) {
+  public update(
+    vehicle: VehicleConfig,
+    carState: CarState,
+    showTrajectory: boolean,
+    showWidthGuide: boolean
+  ) {
     if (!this.lineMesh || !this.widthGuideMesh) return;
 
-    if (!isVisible) {
+    if (!showTrajectory && !showWidthGuide) {
       this.lineMesh.visible = false;
       this.widthGuideMesh.visible = false;
       return;
     }
 
-    this.lineMesh.visible = true;
-    this.widthGuideMesh.visible = true;
+    this.lineMesh.visible = showTrajectory;
+    this.widthGuideMesh.visible = showWidthGuide;
 
     const steerAngle = carState.steerAngle;
     const isReverse = carState.gear === 'R';
@@ -62,7 +67,7 @@ export class TrajectoryGuideRenderer {
 
     // Simulate projected bicycle model trajectory
     let curX = 0;
-    let curZ = direction * (vehicle.length / 2);
+    let curZ = -direction * (vehicle.length / 2);
     let curHeading = 0;
 
     for (let i = 0; i <= numPoints; i++) {
@@ -95,7 +100,7 @@ export class TrajectoryGuideRenderer {
       curX += -Math.sin(curHeading) * deltaDist;
       curZ += -Math.cos(curHeading) * deltaDist;
       if (Math.abs(steerAngle) > 0.01) {
-        curHeading += (deltaDist / wheelBase) * Math.tan(steerAngle);
+        curHeading -= (deltaDist / wheelBase) * Math.tan(steerAngle);
       }
     }
 

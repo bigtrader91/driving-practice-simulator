@@ -1,5 +1,9 @@
 import React, { useRef } from 'react';
 import { RotateCw } from 'lucide-react';
+import {
+  getPointerAngleDegrees,
+  updatePointerSteering,
+} from '../../simulation/SteeringInput';
 
 interface LargeSteeringWheelProps {
   steeringWheelDegrees: number;
@@ -16,8 +20,9 @@ export const LargeSteeringWheel: React.FC<LargeSteeringWheelProps> = ({
 }) => {
   const wheelRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
-  const startXRef = useRef(0);
-  const startRatioRef = useRef(0);
+  const pointerAngleRef = useRef(0);
+  const accumulatedDegreesRef = useRef(0);
+  const needsRebaselineRef = useRef(false);
 
   const steerDeg = steeringWheelDegrees || 0;
   const absDeg = Math.abs(steerDeg);
@@ -40,26 +45,50 @@ export const LargeSteeringWheel: React.FC<LargeSteeringWheelProps> = ({
     badgeColor = 'bg-sky-500/25 text-sky-300 border-sky-500/50';
   }
 
-  const handlePointerDown = (e: React.PointerEvent) => {
+  const getPointerAngle = (clientX: number, clientY: number) => {
+    const rect = wheelRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    return getPointerAngleDegrees(clientX, clientY, rect);
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const pointerAngle = getPointerAngle(e.clientX, e.clientY);
+    if (pointerAngle === null) return;
     isDraggingRef.current = true;
-    startXRef.current = e.clientX;
-    startRatioRef.current = steerDeg / 540;
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    pointerAngleRef.current = pointerAngle;
+    accumulatedDegreesRef.current = steerDeg;
+    needsRebaselineRef.current = false;
+    e.currentTarget.setPointerCapture(e.pointerId);
   };
 
-  const handlePointerMove = (e: React.PointerEvent) => {
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!isDraggingRef.current) return;
-    const deltaX = e.clientX - startXRef.current;
-    // 250px drag = 1.0 ratio (540 degrees)
-    const newRatio = Math.max(-1.0, Math.min(1.0, startRatioRef.current + deltaX / 250));
-    onMouseSteer(newRatio);
+    const nextPointerAngle = getPointerAngle(e.clientX, e.clientY);
+    const nextState = updatePointerSteering(
+      {
+        currentDegrees: accumulatedDegreesRef.current,
+        previousPointerAngle: pointerAngleRef.current,
+        needsRebaseline: needsRebaselineRef.current,
+      },
+      nextPointerAngle
+    );
+    pointerAngleRef.current = nextState.previousPointerAngle;
+    accumulatedDegreesRef.current = nextState.currentDegrees;
+    needsRebaselineRef.current = nextState.needsRebaseline;
+    onMouseSteer(nextState.currentDegrees / 540);
   };
 
-  const handlePointerUp = (e: React.PointerEvent) => {
+  const finishPointerDrag = (e: React.PointerEvent<HTMLDivElement>) => {
     isDraggingRef.current = false;
-    try {
-      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch {}
+    needsRebaselineRef.current = false;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  };
+
+  const handleCenterSteering = () => {
+    accumulatedDegreesRef.current = 0;
+    onMouseSteer(0);
   };
 
   return (
@@ -71,51 +100,70 @@ export const LargeSteeringWheel: React.FC<LargeSteeringWheelProps> = ({
         <span className="text-[10px] opacity-75 font-mono ml-1">(앞바퀴: {tireDeg}°)</span>
       </div>
 
-      {/* Large Realistic Luxury Steering Wheel (200px diameter, rotates up to 540 degrees) */}
+      {/* Fixed calibration ring keeps full turns readable while the wheel rotates. */}
       <div
         ref={wheelRef}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        className="w-44 h-44 sm:w-52 sm:h-52 rounded-full relative cursor-grab active:cursor-grabbing shadow-2xl flex items-center justify-center transition-transform duration-75"
-        style={{
-          transform: `rotate(${steerDeg}deg)`,
-          background: 'radial-gradient(circle, #1e293b 0%, #0f172a 70%, #020617 100%)',
-          boxShadow: '0 10px 30px -5px rgba(0, 0, 0, 0.8), inset 0 0 20px rgba(0,0,0,0.9), 0 0 0 6px #1e293b, 0 0 0 10px #0f172a',
-        }}
-        title="핸들을 좌우로 드래그하여 조작하세요 (최대 1.5바퀴 / 540도)"
+        onPointerUp={finishPointerDrag}
+        onPointerCancel={finishPointerDrag}
+        onLostPointerCapture={finishPointerDrag}
+        className="w-44 h-44 sm:w-52 sm:h-52 rounded-full relative cursor-grab active:cursor-grabbing touch-none"
+        title="핸들을 원형으로 돌려 조작하세요 (최대 좌우 1.5바퀴 / 540도)"
+        aria-label="핸들 원형 조작"
       >
-        {/* 12 O'Clock Center Alignment Marker (Red/Yellow Sports Band) */}
-        <div className="absolute top-0 w-4 h-6 bg-gradient-to-b from-amber-400 to-rose-500 rounded-sm shadow-md ring-1 ring-white/50" />
+        <div className="absolute -inset-3 rounded-full border border-cyan-300/20 bg-slate-950/45 shadow-[0_0_30px_rgba(8,145,178,0.12)] pointer-events-none" />
+        <div className="absolute -top-3 left-1/2 z-20 h-5 w-1.5 -translate-x-1/2 rounded-full bg-cyan-300 shadow-[0_0_12px_rgba(103,232,249,0.9)] pointer-events-none" />
 
-        {/* Outer Wheel Grip Texture Grooves */}
-        <div className="absolute inset-2 rounded-full border-4 border-dashed border-slate-700/60 pointer-events-none" />
+        <div
+          className="absolute inset-0 rounded-full shadow-2xl flex items-center justify-center transition-transform duration-75 pointer-events-none"
+          style={{
+            transform: `rotate(${steerDeg}deg)`,
+            background: 'radial-gradient(circle, #1e293b 0%, #0f172a 70%, #020617 100%)',
+            boxShadow: '0 10px 30px -5px rgba(0, 0, 0, 0.8), inset 0 0 20px rgba(0,0,0,0.9), 0 0 0 6px #1e293b, 0 0 0 10px #0f172a',
+          }}
+        >
+          {/* 12 O'Clock Center Alignment Marker (Red/Yellow Sports Band) */}
+          <div className="absolute top-0 w-4 h-6 bg-gradient-to-b from-amber-400 to-rose-500 rounded-sm shadow-md ring-1 ring-white/50" />
 
-        {/* Horizontal Left & Right Spokes */}
-        <div className="absolute w-full h-7 bg-gradient-to-r from-slate-700 via-slate-800 to-slate-700 rounded-md shadow-inner flex items-center justify-between px-3">
-          <div className="w-6 h-2.5 rounded bg-slate-900/80 border border-slate-600" />
-          <div className="w-6 h-2.5 rounded bg-slate-900/80 border border-slate-600" />
-        </div>
+          {/* Outer Wheel Grip Texture Grooves */}
+          <div className="absolute inset-2 rounded-full border-4 border-dashed border-slate-700/60" />
 
-        {/* Vertical Bottom Spoke */}
-        <div className="absolute bottom-0 w-7 h-20 bg-gradient-to-b from-slate-800 to-slate-700 rounded-md shadow-inner" />
-
-        {/* Center Horn Hub */}
-        <div className="w-18 h-18 sm:w-22 sm:h-22 rounded-full bg-slate-900 border-4 border-slate-600 shadow-2xl flex flex-col items-center justify-center relative z-10">
-          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-slate-800 to-slate-950 border border-slate-500 flex items-center justify-center shadow-inner">
-            <span className="font-black text-cyan-400 text-xs sm:text-sm tracking-widest font-mono">DRIVE</span>
+          {/* Horizontal Left & Right Spokes */}
+          <div className="absolute w-full h-7 bg-gradient-to-r from-slate-700 via-slate-800 to-slate-700 rounded-md shadow-inner flex items-center justify-between px-3">
+            <div className="w-6 h-2.5 rounded bg-slate-900/80 border border-slate-600" />
+            <div className="w-6 h-2.5 rounded bg-slate-900/80 border border-slate-600" />
           </div>
-          <span className="text-[8px] font-bold text-slate-400 uppercase mt-0.5">AIRBAG</span>
-        </div>
 
-        {/* 9 & 3 O'Clock Ergonomic Thumb Grips */}
-        <div className="absolute left-0 w-3.5 h-10 bg-slate-900/90 rounded-r-md" />
-        <div className="absolute right-0 w-3.5 h-10 bg-slate-900/90 rounded-l-md" />
+          {/* Vertical Bottom Spoke */}
+          <div className="absolute bottom-0 w-7 h-20 bg-gradient-to-b from-slate-800 to-slate-700 rounded-md shadow-inner" />
+
+          {/* Center Horn Hub */}
+          <div className="w-18 h-18 sm:w-22 sm:h-22 rounded-full bg-slate-900 border-4 border-slate-600 shadow-2xl flex flex-col items-center justify-center relative z-10">
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-slate-800 to-slate-950 border border-slate-500 flex items-center justify-center shadow-inner">
+              <span className="font-black text-cyan-400 text-xs sm:text-sm tracking-widest font-mono">DRIVE</span>
+            </div>
+            <span className="text-[8px] font-bold text-slate-400 uppercase mt-0.5">AIRBAG</span>
+          </div>
+
+          {/* 9 & 3 O'Clock Ergonomic Thumb Grips */}
+          <div className="absolute left-0 w-3.5 h-10 bg-slate-900/90 rounded-r-md" />
+          <div className="absolute right-0 w-3.5 h-10 bg-slate-900/90 rounded-l-md" />
+        </div>
       </div>
 
-      {/* Mouse Steering Prompt Under Wheel */}
-      <div className="text-[10px] text-slate-400 font-bold mt-1 bg-slate-950/80 px-2.5 py-0.5 rounded-full border border-slate-800">
-        🖱️ 핸들 좌우 드래그: 1.5바퀴(540°) 회전
+      <div className="mt-2 flex items-center gap-1.5">
+        <div className="text-[10px] text-slate-400 font-bold bg-slate-950/80 px-2.5 py-1 rounded-full border border-slate-800">
+          원형 드래그 · {Math.abs(steeringWheelTurns).toFixed(2)}바퀴
+        </div>
+        <button
+          type="button"
+          onClick={handleCenterSteering}
+          className="rounded-full border border-cyan-400/40 bg-cyan-950/80 px-2.5 py-1 text-[10px] font-black text-cyan-200 shadow-lg transition hover:bg-cyan-900 active:scale-95"
+          title="핸들을 0도로 중앙 정렬"
+        >
+          중앙 정렬
+        </button>
       </div>
     </div>
   );
