@@ -49,7 +49,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         <button
           onClick={onResetCar}
           className="glass-panel p-2 rounded-xl text-slate-300 hover:bg-slate-800 transition border border-slate-700 shadow-lg"
-          title="시작 위치로 리셋 (R키)"
+          title="시작 위치로 리셋"
         >
           <RotateCcw className="w-4 h-4" />
         </button>
@@ -93,8 +93,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 <div className="font-bold text-cyan-400">주행 & 조향</div>
                 <div><kbd className="bg-slate-800 px-1.5 py-0.5 rounded font-mono">W / ↑</kbd> 가속 (엑셀)</div>
                 <div><kbd className="bg-slate-800 px-1.5 py-0.5 rounded font-mono">S / ↓</kbd> 감속 / 브레이크</div>
-                <div><kbd className="bg-slate-800 px-1.5 py-0.5 rounded font-mono">A / D</kbd> 핸들 좌/우 조향</div>
-                <div><kbd className="bg-slate-800 px-1.5 py-0.5 rounded font-mono">Space</kbd> 사이드 브레이크</div>
+                <div><kbd className="bg-slate-800 px-1.5 py-0.5 rounded font-mono">← / →</kbd> 핸들 좌/우 조향</div>
+                <div><kbd className="bg-slate-800 px-1.5 py-0.5 rounded font-mono">Space</kbd> 비상등</div>
               </div>
 
               <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 space-y-1">

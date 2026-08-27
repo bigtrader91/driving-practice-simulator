@@ -214,9 +214,9 @@ export const HUD: React.FC<HUDProps> = ({
           <div className="flex justify-between items-center text-[10px] font-black text-slate-400 pb-1 border-b border-slate-800">
             <span className="text-cyan-400 flex items-center gap-1">
               <Activity className="w-3 h-3" />
-              왼손 키보드 조작 가이드
+              키보드 조작 가이드
             </span>
-            <span className="text-[9px] text-emerald-400 font-bold">🖱️ 조향: 마우스 전용</span>
+            <span className="text-[9px] text-emerald-400 font-bold">조향: 마우스 · ←/→</span>
           </div>
 
           <div className="space-y-1.5 text-xs">

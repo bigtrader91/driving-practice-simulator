@@ -1,4 +1,6 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+/// <reference types="vite/client" />
+
+import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import {
   VehicleConfig,
@@ -11,22 +13,121 @@ import {
   TrafficVehicleData,
 } from '../../types/simulator';
 import { createCar3DGroup } from './CarModel';
-import { buildTrackScene, CollisionObstacle, TrafficSignalRig } from './TrackBuilder';
+import { buildTrackScene } from './TrackBuilder';
 import { TrajectoryGuideRenderer } from './TireTracksOverlay';
 import { TrafficLightController } from '../../simulation/TrafficLightController';
 import { MissionEvaluator } from '../../simulation/MissionEvaluator';
 import { MissionRunState } from '../../simulation/MissionRunState';
+import { consumeGearCommand } from '../../simulation/GearInput';
+import { getGuideVisibility } from '../../simulation/GuideVisibility';
+import { updateKeyboardSteeringRatio } from '../../simulation/SteeringInput';
+import { advanceVehiclePose, updateLongitudinalMotion } from '../../simulation/VehicleMotion';
+import { resetIfOutsideWorldBounds } from '../../simulation/WorldBounds';
 import { sounds } from '../../audio/soundEffects';
 import {
   getBackupCameraOffset,
   getForwardDirection,
   getHoodCameraOffset,
   getMirrorDirection,
-  getOrbitVehicleHeading,
   getRearDirection,
   getVisualWheelSteerRotation,
   type MirrorView,
 } from './VehicleCoordinateSystem';
+import {
+  loadVehicleAssetLibrary,
+  type VehicleAssetLibrary,
+} from './VehicleAssetLibrary';
+import {
+  createTrafficVehicleVisual,
+  disposeTrafficVehicleVisual,
+  syncTrafficVehicleVisual,
+  type TrafficVehicleVisual,
+} from './TrafficVehicleVisual';
+
+type LoadVehicleAssetLibrary = (baseUrl: string) => Promise<VehicleAssetLibrary>;
+type VehicleAssetState =
+  | { status: 'loading' }
+  | { status: 'ready'; library: VehicleAssetLibrary }
+  | { status: 'error'; message: string };
+
+export interface SimulationCleanupStep {
+  label: string;
+  cleanup: () => void;
+}
+
+const errorMessage = (error: unknown) => (
+  error instanceof Error ? error.message : String(error)
+);
+
+export const preloadSimulationVehicleAssets = (
+  baseUrl: string,
+  loadLibrary: LoadVehicleAssetLibrary,
+  onReady: (library: VehicleAssetLibrary) => void,
+  onError: (message: string) => void,
+): (() => void) => {
+  let cancelled = false;
+  let loading: Promise<VehicleAssetLibrary>;
+  try {
+    loading = loadLibrary(baseUrl);
+  } catch (error) {
+    loading = Promise.reject(error);
+  }
+  loading
+    .then((library) => {
+      if (!cancelled) onReady(library);
+    })
+    .catch((error: unknown) => {
+      if (cancelled) return;
+      const message = errorMessage(error);
+      console.error(message, error);
+      onError(message);
+    });
+  return () => {
+    cancelled = true;
+  };
+};
+
+export const SimulationAssetErrorOverlay = ({ message }: { message: string }) => (
+  <div
+    role="alert"
+    aria-live="assertive"
+    className="absolute inset-x-4 top-4 z-20 rounded-lg border border-red-400 bg-red-950/95 p-4 text-sm text-red-100 shadow-lg"
+  >
+    <p className="font-semibold">교통 차량 모델을 불러오지 못했습니다.</p>
+    <p className="mt-1 break-all">{message}</p>
+    <p className="mt-2">다시 시도하려면 페이지를 새로고침해 주세요.</p>
+  </div>
+);
+
+export const SimulationAssetLoadingOverlay = () => (
+  <div
+    role="status"
+    aria-live="polite"
+    className="absolute inset-x-4 top-4 z-20 rounded-lg border border-sky-400 bg-slate-950/90 p-4 text-sm text-sky-100 shadow-lg"
+  >
+    교통 차량 모델을 불러오는 중입니다.
+  </div>
+);
+
+export const createCompletionSafeCleanup = (
+  steps: SimulationCleanupStep[],
+): (() => void) => {
+  let completed = false;
+  return () => {
+    if (completed) return;
+    completed = true;
+    [...steps].reverse().forEach(({ label, cleanup }) => {
+      try {
+        cleanup();
+      } catch (error) {
+        console.error(
+          `Failed to clean up simulation resource ${label}: ${errorMessage(error)}`,
+          error,
+        );
+      }
+    });
+  };
+};
 
 interface SimulationCanvasProps {
   vehicle: VehicleConfig;
@@ -39,6 +140,7 @@ interface SimulationCanvasProps {
   onMissionComplete: (score: number, deductions: ScoreDeduction[]) => void;
   onMissionFail: (reason: string, score: number, deductions: ScoreDeduction[]) => void;
   onPenalty: (deduction: ScoreDeduction) => void;
+  onReset: () => void;
   leftMirrorCanvasRef?: React.RefObject<HTMLCanvasElement | null>;
   rightMirrorCanvasRef?: React.RefObject<HTMLCanvasElement | null>;
   rearMirrorCanvasRef?: React.RefObject<HTMLCanvasElement | null>;
@@ -56,24 +158,39 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
   onMissionComplete,
   onMissionFail,
   onPenalty,
+  onReset,
   leftMirrorCanvasRef,
   rightMirrorCanvasRef,
   rearMirrorCanvasRef,
   backupCameraCanvasRef,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [vehicleAssetState, setVehicleAssetState] = useState<VehicleAssetState>({ status: 'loading' });
   // UI 토글은 effect를 재실행하지 않고 ref로 미러링한다 (C/T키 리셋 버그 수정)
   const uiStateRef = useRef({ cameraMode, showTrajectory, showWidthGuide });
   uiStateRef.current = { cameraMode, showTrajectory, showWidthGuide };
 
+  useEffect(() => preloadSimulationVehicleAssets(
+    import.meta.env.BASE_URL,
+    loadVehicleAssetLibrary,
+    (library) => setVehicleAssetState({ status: 'ready', library }),
+    (message) => setVehicleAssetState({ status: 'error', message }),
+  ), []);
+
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!containerRef.current || vehicleAssetState.status !== 'ready') return;
+    const vehicleAssets = vehicleAssetState.library;
     const container = containerRef.current;
     const width = container.clientWidth || window.innerWidth;
     const height = container.clientHeight || window.innerHeight;
+    const cleanupSteps: SimulationCleanupStep[] = [];
+    const cleanup = createCompletionSafeCleanup(cleanupSteps);
+
+    try {
 
     // 1. Scene & Renderer
     const scene = new THREE.Scene();
+    cleanupSteps.push({ label: 'scene', cleanup: () => scene.clear() });
     scene.background = new THREE.Color(0x60a5fa);
     scene.fog = new THREE.FogExp2(0x93c5fd, 0.0028);
 
@@ -81,6 +198,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
       antialias: true,
       powerPreference: 'high-performance',
     });
+    cleanupSteps.push({ label: 'main renderer', cleanup: () => renderer.dispose() });
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.15;
     renderer.setSize(width, height);
@@ -97,18 +215,22 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
 
     if (leftMirrorCanvasRef?.current) {
       leftMirrorRenderer = new THREE.WebGLRenderer({ canvas: leftMirrorCanvasRef.current, antialias: true });
+      cleanupSteps.push({ label: 'left mirror renderer', cleanup: () => leftMirrorRenderer?.dispose() });
       leftMirrorRenderer.setSize(leftMirrorCanvasRef.current.width, leftMirrorCanvasRef.current.height);
     }
     if (rightMirrorCanvasRef?.current) {
       rightMirrorRenderer = new THREE.WebGLRenderer({ canvas: rightMirrorCanvasRef.current, antialias: true });
+      cleanupSteps.push({ label: 'right mirror renderer', cleanup: () => rightMirrorRenderer?.dispose() });
       rightMirrorRenderer.setSize(rightMirrorCanvasRef.current.width, rightMirrorCanvasRef.current.height);
     }
     if (rearMirrorCanvasRef?.current) {
       rearMirrorRenderer = new THREE.WebGLRenderer({ canvas: rearMirrorCanvasRef.current, antialias: true });
+      cleanupSteps.push({ label: 'rear mirror renderer', cleanup: () => rearMirrorRenderer?.dispose() });
       rearMirrorRenderer.setSize(rearMirrorCanvasRef.current.width, rearMirrorCanvasRef.current.height);
     }
     if (backupCameraCanvasRef?.current) {
       backupRenderer = new THREE.WebGLRenderer({ canvas: backupCameraCanvasRef.current, antialias: true });
+      cleanupSteps.push({ label: 'backup camera renderer', cleanup: () => backupRenderer?.dispose() });
       backupRenderer.setSize(backupCameraCanvasRef.current.width, backupCameraCanvasRef.current.height);
     }
 
@@ -141,66 +263,17 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
     const trafficVehicles: TrafficVehicleData[] = [...initialTraffic];
     const trafficMeshes: {
       data: TrafficVehicleData;
-      group: THREE.Group;
-      headlights: THREE.Mesh[];
-      brakeLights: THREE.Mesh[];
+      visual: TrafficVehicleVisual;
     }[] = [];
 
-    const trafficMatCache: Record<number, THREE.MeshStandardMaterial> = {};
-    const getTrafficBodyMat = (color: number) => {
-      if (!trafficMatCache[color]) {
-        trafficMatCache[color] = new THREE.MeshStandardMaterial({ color, roughness: 0.22, metalness: 0.7 });
-      }
-      return trafficMatCache[color];
-    };
-
     trafficVehicles.forEach((tv) => {
-      const tvGroup = new THREE.Group();
-      const bodyMat = getTrafficBodyMat(tv.color);
-      const isTruck = tv.type === 'truck';
-      const isSUV = tv.type === 'suv';
-
-      const tw = isTruck ? 2.3 : isSUV ? 2.0 : 1.82;
-      const tl = isTruck ? 7.5 : isSUV ? 4.9 : 4.65;
-      const th = isTruck ? 2.8 : isSUV ? 1.7 : 1.45;
-
-      const bodyMesh = new THREE.Mesh(new THREE.BoxGeometry(tw, th * 0.45, tl), bodyMat);
-      bodyMesh.position.y = th * 0.225 + 0.25;
-      bodyMesh.castShadow = true;
-      tvGroup.add(bodyMesh);
-
-      const cabinMesh = new THREE.Mesh(new THREE.BoxGeometry(tw * 0.9, th * 0.45, tl * 0.5), bodyMat);
-      cabinMesh.position.set(0, th * 0.65 + 0.25, -tl * 0.05);
-      cabinMesh.castShadow = true;
-      tvGroup.add(cabinMesh);
-
-      const hlMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.0 });
-      const blMat = new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xaa0000, emissiveIntensity: 0.4 });
-
-      const hlLeft = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.12, 0.05), hlMat);
-      hlLeft.position.set(-tw * 0.35, th * 0.3 + 0.25, tl / 2 + 0.02);
-      const hlRight = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.12, 0.05), hlMat);
-      hlRight.position.set(tw * 0.35, th * 0.3 + 0.25, tl / 2 + 0.02);
-      tvGroup.add(hlLeft);
-      tvGroup.add(hlRight);
-
-      const blLeft = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.12, 0.05), blMat);
-      blLeft.position.set(-tw * 0.35, th * 0.3 + 0.25, -tl / 2 - 0.02);
-      const blRight = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.12, 0.05), blMat);
-      blRight.position.set(tw * 0.35, th * 0.3 + 0.25, -tl / 2 - 0.02);
-      tvGroup.add(blLeft);
-      tvGroup.add(blRight);
-
-      tvGroup.position.set(tv.x, 0, tv.z);
-      tvGroup.scale.z = -1;
-      scene.add(tvGroup);
-
-      trafficMeshes.push({
-        data: tv,
-        group: tvGroup,
-        headlights: [hlLeft, hlRight],
-        brakeLights: [blLeft, blRight],
+      const visual = createTrafficVehicleVisual(tv, vehicleAssets);
+      cleanupSteps.push({
+        label: `traffic visual ${tv.id}`,
+        cleanup: () => disposeTrafficVehicleVisual(visual),
       });
+      scene.add(visual.group);
+      trafficMeshes.push({ data: tv, visual });
     });
 
     // 4. Player Car Mesh
@@ -216,6 +289,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
 
     // 6. Trajectory guide renderer
     const trajectoryRenderer = new TrajectoryGuideRenderer(scene);
+    cleanupSteps.push({ label: 'trajectory renderer', cleanup: () => trajectoryRenderer.dispose() });
 
     // State
     const carState: CarState = {
@@ -248,7 +322,6 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
     let headPitch = 0;
     let blinkerTimer = 0;
     let blinkerState = false;
-    let highBeamTimer = 0;
     let lastTime = performance.now();
     let collisionCooldown = 0;
     let parkingHoldTimer = 0;
@@ -257,12 +330,17 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
     let camRollInertia = 0;
     let vibeOffset = 0;
 
+    cleanupSteps.push({ label: 'engine audio', cleanup: () => sounds.stopEngine() });
     sounds.init();
     sounds.startEngine();
 
-    setTimeout(() => {
+    const instructorTimeoutId = window.setTimeout(() => {
       sounds.speakInstructor(`${mission.title} 연습을 시작합니다. 안전 운전하세요.`);
     }, 1200);
+    cleanupSteps.push({
+      label: 'instructor timeout',
+      cleanup: () => window.clearTimeout(instructorTimeoutId),
+    });
 
     const applyPenalty = (deduction: ScoreDeduction) => {
       if (!runState.applyPenalty(deduction)) return;
@@ -294,10 +372,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
       const inputs = inputsRef.current;
 
       // Handle Gear Shifts (P, R, N, D)
-      if (inputs.gearP) carState.gear = 'P';
-      else if (inputs.gearR) carState.gear = 'R';
-      else if (inputs.gearN) carState.gear = 'N';
-      else if (inputs.gearD) carState.gear = 'D';
+      carState.gear = consumeGearCommand(inputs, carState.gear);
 
       // Handle Turn Signals
       if (inputs.signalLeft) {
@@ -344,7 +419,15 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
       // =========================================================================
       // Max steering wheel angle in radians: 1.5 * 2π = 3π = 9.4248 rad (540 degrees)
       const maxSteeringWheelAngle = vehicle.maxSteeringWheelTurns * Math.PI * 2;
-      
+
+      inputs.mouseSteerRatio = updateKeyboardSteeringRatio(
+        inputs.mouseSteerRatio,
+        inputs.steerLeft,
+        inputs.steerRight,
+        inputs.isMouseSteeringActive,
+        delta
+      );
+
       // Target steering wheel angle directly from mouse (-1.0 to +1.0)
       const targetWheelAngle = inputs.mouseSteerRatio * maxSteeringWheelAngle;
       carState.steeringWheelAngle = THREE.MathUtils.lerp(carState.steeringWheelAngle, targetWheelAngle, 18 * delta);
@@ -363,9 +446,19 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
       car3D.frontLeftWheel.rotation.y = visualWheelSteer;
       car3D.frontRightWheel.rotation.y = visualWheelSteer;
 
-      // Acceleration & Braking with Pitch Inertia
-      carState.isBraking = (inputs.backward && carState.gear === 'D') || (inputs.forward && carState.gear === 'R') || inputs.handbrake;
-      carState.isAccelerating = (inputs.forward && carState.gear === 'D') || (inputs.backward && carState.gear === 'R');
+      // W remains the accelerator and S remains the brake in every driving gear.
+      const motion = updateLongitudinalMotion({
+        speedMs: carState.speedMs,
+        gear: carState.gear,
+        accelerator: inputs.forward,
+        brake: inputs.backward,
+        handbrake: inputs.handbrake,
+        deltaSeconds: delta,
+        vehicle,
+      });
+      carState.speedMs = motion.speedMs;
+      carState.isBraking = motion.isBraking;
+      carState.isAccelerating = motion.isAccelerating;
       carState.isHandbrake = inputs.handbrake;
 
       car3D.brakeLights.forEach((bl) => {
@@ -385,52 +478,22 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
 
       vibeOffset = Math.sin(currentTime * 0.03) * (Math.abs(carState.speed) > 10 ? 0.003 : 0.0008);
 
-      if (carState.gear === 'P' || carState.gear === 'N' || carState.isHandbrake) {
-        carState.speedMs = THREE.MathUtils.lerp(carState.speedMs, 0, 8 * delta);
-      } else if (carState.gear === 'D') {
-        if (inputs.forward) {
-          const targetSpeedMs = (vehicle.maxSpeed * 1000) / 3600;
-          carState.speedMs = Math.min(targetSpeedMs, carState.speedMs + vehicle.acceleration * delta);
-        } else if (inputs.backward) {
-          carState.speedMs = Math.max(0, carState.speedMs - vehicle.brakingPower * delta);
-        } else {
-          const creepSpeed = 1.8;
-          if (carState.speedMs > creepSpeed) {
-            carState.speedMs -= 2.0 * delta;
-          } else {
-            carState.speedMs = Math.min(creepSpeed, carState.speedMs + 0.8 * delta);
-          }
-        }
-      } else if (carState.gear === 'R') {
-        if (inputs.backward) {
-          const targetReverseMs = (vehicle.reverseMaxSpeed * 1000) / 3600;
-          carState.speedMs = Math.max(-targetReverseMs, carState.speedMs - vehicle.acceleration * 0.7 * delta);
-        } else if (inputs.forward) {
-          carState.speedMs = Math.min(0, carState.speedMs + vehicle.brakingPower * delta);
-        } else {
-          const revCreep = -1.2;
-          if (carState.speedMs < revCreep) {
-            carState.speedMs += 2.0 * delta;
-          } else {
-            carState.speedMs = Math.max(revCreep, carState.speedMs - 0.8 * delta);
-          }
-        }
-      }
-
       carState.speed = Math.round((carState.speedMs * 3600) / 1000);
       carState.odometer += Math.abs(carState.speedMs) * delta;
 
       // Position update with correct Ackermann Yaw Kinematics
       if (Math.abs(carState.speedMs) > 0.01) {
         const moveDist = carState.speedMs * delta;
-        carState.x += -Math.sin(carState.heading) * moveDist;
-        carState.z += -Math.cos(carState.heading) * moveDist;
-
-        if (Math.abs(carState.steerAngle) > 0.001) {
-          // Turning Right (steerAngle > 0): heading decreases (clockwise turning in -Z/+X coordinates)
-          const turnRate = (moveDist / vehicle.wheelBase) * Math.tan(carState.steerAngle);
-          carState.heading -= turnRate;
-        }
+        const nextPose = advanceVehiclePose(
+          carState,
+          carState.speedMs,
+          carState.steerAngle,
+          delta,
+          vehicle.wheelBase
+        );
+        carState.x = nextPose.x;
+        carState.z = nextPose.z;
+        carState.heading = nextPose.heading;
 
         const wheelRoll = moveDist / 0.33;
         car3D.frontLeftWheel.rotation.x += wheelRoll;
@@ -439,23 +502,25 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
         car3D.rearRightWheel.rotation.x += wheelRoll;
       }
 
+      if (resetIfOutsideWorldBounds(carState, onReset)) {
+        sounds.playWarning();
+        sounds.speakInstructor('주행 가능 구역을 벗어나 훈련을 다시 시작합니다.');
+        return;
+      }
+
       car3D.carGroup.position.set(carState.x, carState.y, carState.z);
       car3D.carGroup.rotation.y = carState.heading;
 
       sounds.updateEngine(carState.speed, carState.isAccelerating, carState.gear);
 
       // Dynamic Traffic AI
-      highBeamTimer += delta;
-      const isHighBeamFlash = Math.sin(highBeamTimer * 12) > 0;
-
-      trafficMeshes.forEach(({ data: tv, group: tvG, headlights, brakeLights }) => {
+      trafficMeshes.forEach(({ data: tv, visual }) => {
         // 회전교차로 순환 차량 — 원형 궤도 이동 후 조기 반환
         if (tv.motion === 'orbit' && tv.orbit) {
           tv.orbit.angle += tv.orbit.angularSpeed * tv.orbit.direction * delta;
           tv.x = tv.orbit.cx + Math.cos(tv.orbit.angle) * tv.orbit.radius;
           tv.z = tv.orbit.cz + Math.sin(tv.orbit.angle) * tv.orbit.radius;
-          tvG.position.set(tv.x, 0, tv.z);
-          tvG.rotation.y = getOrbitVehicleHeading(tv.orbit.angle, tv.orbit.direction);
+          syncTrafficVehicleVisual(visual, tv, delta, { isBraking: false });
           return; // yield/aggressive 응답 스킵
         }
 
@@ -464,8 +529,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
           const tvSpeedMs = (tv.speedKmH * 1000) / 3600;
           tv.z += tvSpeedMs * delta;
           if (tv.z > 200) tv.z = -180 - Math.random() * 60;
-          tvG.position.set(tv.x, 0, tv.z);
-          tvG.rotation.y = Math.PI;
+          syncTrafficVehicleVisual(visual, tv, delta, { isBraking: false });
           return;
         }
 
@@ -508,16 +572,9 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
           tv.z = 240 + Math.random() * 40;
         }
 
-        tvG.position.set(tv.x, 0, tv.z);
-
-        const hlIntensity = tv.isFlashingHighBeam && isHighBeamFlash ? 3.5 : 1.0;
-        headlights.forEach((hl) => {
-          (hl.material as THREE.MeshStandardMaterial).emissiveIntensity = hlIntensity;
-        });
-
-        const isBraking = tvSpeedMs < (tv.speedKmH * 1000) / 3600 - 1;
-        brakeLights.forEach((bl) => {
-          (bl.material as THREE.MeshStandardMaterial).emissiveIntensity = isBraking ? 2.5 : 0.4;
+        const baseSpeedMs = (tv.speedKmH * 1000) / 3600;
+        syncTrafficVehicleVisual(visual, tv, delta, {
+          isBraking: tvSpeedMs < baseSpeedMs - 1,
         });
       });
 
@@ -666,7 +723,18 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
         }
       }
 
-      trajectoryRenderer.update(vehicle, carState, uiStateRef.current.showTrajectory || uiStateRef.current.showWidthGuide);
+      const guideVisibility = getGuideVisibility(
+        mission.id,
+        carState.gear,
+        uiStateRef.current.showTrajectory,
+        uiStateRef.current.showWidthGuide
+      );
+      trajectoryRenderer.update(
+        vehicle,
+        carState,
+        guideVisibility.trajectory,
+        guideVisibility.width
+      );
 
       // Camera Placement
       const [cpx, cpy, cpz] = vehicle.cockpitPos;
@@ -740,6 +808,10 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
     };
 
     animationFrameId = requestAnimationFrame(animate);
+    cleanupSteps.push({
+      label: 'animation frame',
+      cleanup: () => cancelAnimationFrame(animationFrameId),
+    });
 
     const handleResize = () => {
       if (!container) return;
@@ -750,21 +822,26 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
       renderer.setSize(w, h);
     };
     window.addEventListener('resize', handleResize);
+    cleanupSteps.push({
+      label: 'resize listener',
+      cleanup: () => window.removeEventListener('resize', handleResize),
+    });
 
-    return () => {
-      cancelAnimationFrame(animationFrameId);
-      window.removeEventListener('resize', handleResize);
-      sounds.stopEngine();
-      trajectoryRenderer.dispose();
-      renderer.dispose();
-      leftMirrorRenderer?.dispose();
-      rightMirrorRenderer?.dispose();
-      rearMirrorRenderer?.dispose();
-      backupRenderer?.dispose();
-    };
-  }, [vehicle, mission]);
+    return cleanup;
+    } catch (error) {
+      cleanup();
+      const message = `Failed to initialize driving simulation: ${errorMessage(error)}`;
+      console.error(message, error);
+      setVehicleAssetState({ status: 'error', message });
+      return cleanup;
+    }
+  }, [vehicle, mission, vehicleAssetState]);
 
   return (
-    <div ref={containerRef} className="w-full h-full relative cursor-crosshair overflow-hidden" />
+    <div ref={containerRef} className="w-full h-full relative cursor-crosshair overflow-hidden">
+      {vehicleAssetState.status === 'loading' && <SimulationAssetLoadingOverlay />}
+      {vehicleAssetState.status === 'error'
+        && <SimulationAssetErrorOverlay message={vehicleAssetState.message} />}
+    </div>
   );
 };
