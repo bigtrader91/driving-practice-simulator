@@ -23,6 +23,7 @@ import { getGuideVisibility } from '../../simulation/GuideVisibility';
 import { updateKeyboardSteeringRatio } from '../../simulation/SteeringInput';
 import { advanceVehiclePose, updateLongitudinalMotion } from '../../simulation/VehicleMotion';
 import { resetIfOutsideWorldBounds } from '../../simulation/WorldBounds';
+import { playAttemptResultSound, playInstructionalWarning } from '../../simulation/TrainingGuidanceAudio';
 import { sounds } from '../../audio/soundEffects';
 import {
   getBackupCameraOffset,
@@ -135,6 +136,8 @@ interface SimulationCanvasProps {
   cameraMode: CameraViewMode;
   showTrajectory: boolean;
   showWidthGuide: boolean;
+  guidanceEnabled: boolean;
+  resultFeedbackEnabled: boolean;
   inputsRef: React.MutableRefObject<ControlInputs>;
   onStateUpdate: (state: CarState, sensors: ProximitySensorData, trafficData?: TrafficVehicleData[]) => void;
   onMissionComplete: (score: number, deductions: ScoreDeduction[]) => void;
@@ -153,6 +156,8 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
   cameraMode,
   showTrajectory,
   showWidthGuide,
+  guidanceEnabled,
+  resultFeedbackEnabled,
   inputsRef,
   onStateUpdate,
   onMissionComplete,
@@ -334,18 +339,21 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
     sounds.init();
     sounds.startEngine();
 
-    const instructorTimeoutId = window.setTimeout(() => {
-      sounds.speakInstructor(`${mission.title} 연습을 시작합니다. 안전 운전하세요.`);
-    }, 1200);
-    cleanupSteps.push({
-      label: 'instructor timeout',
-      cleanup: () => window.clearTimeout(instructorTimeoutId),
-    });
+    const introSpeechTimer = guidanceEnabled
+      ? window.setTimeout(() => {
+          sounds.speakInstructor(`${mission.title} 연습을 시작합니다. 안전 운전하세요.`);
+        }, 1200)
+      : null;
+    if (introSpeechTimer !== null) {
+      cleanupSteps.push({
+        label: 'instructor timeout',
+        cleanup: () => window.clearTimeout(introSpeechTimer),
+      });
+    }
 
     const applyPenalty = (deduction: ScoreDeduction) => {
       if (!runState.applyPenalty(deduction)) return;
-      sounds.playWarning();
-      sounds.speakInstructor(`주의! ${deduction.reason}`);
+      playInstructionalWarning(guidanceEnabled, deduction.reason, sounds);
       onPenalty(deduction);
     };
 
@@ -379,14 +387,14 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
         carState.turnSignal = carState.turnSignal === 'left' ? 'none' : 'left';
         inputs.signalLeft = false;
         if (carState.turnSignal === 'left') {
-          sounds.speakInstructor('좌측 깜빡이 작동. 좌측 사이드미러를 확인하세요.');
+          if (guidanceEnabled) sounds.speakInstructor('좌측 깜빡이 작동. 좌측 사이드미러를 확인하세요.');
         }
       }
       if (inputs.signalRight) {
         carState.turnSignal = carState.turnSignal === 'right' ? 'none' : 'right';
         inputs.signalRight = false;
         if (carState.turnSignal === 'right') {
-          sounds.speakInstructor('우측 깜빡이 작동. 우측 사이드미러를 확인하세요.');
+          if (guidanceEnabled) sounds.speakInstructor('우측 깜빡이 작동. 우측 사이드미러를 확인하세요.');
         }
       }
       if (inputs.hazard) {
@@ -548,7 +556,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
             currentTargetSpeed = Math.max(30, carState.speed - 15);
             tv.isFlashingHighBeam = true;
             tv.isHonking = false;
-            sounds.speakInstructor('뒤차가 양보하고 있습니다. 서서히 진입하세요.');
+            if (guidanceEnabled) sounds.speakInstructor('뒤차가 양보하고 있습니다. 서서히 진입하세요.');
           } else if (tv.behavior === 'aggressive') {
             tv.isYielding = false;
             currentTargetSpeed = tv.speedKmH + 22;
@@ -556,7 +564,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
             if (zDiff < 18 && !tv.isHonking) {
               tv.isHonking = true;
               sounds.playWarning();
-              sounds.speakInstructor('위험! 뒤차가 가속 중입니다. 끼어들지 마세요.');
+              if (guidanceEnabled) sounds.speakInstructor('위험! 뒤차가 가속 중입니다. 끼어들지 마세요.');
             }
           }
         } else {
@@ -671,8 +679,8 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
       if (evalResult.failReason) {
         const failure = runState.finishFailure(evalResult.failReason);
         if (!failure) return;
-        sounds.playWarning();
-        sounds.speakInstructor(`미션 실패! ${evalResult.failReason}`);
+        playAttemptResultSound(resultFeedbackEnabled, 'failure', sounds);
+        if (guidanceEnabled) sounds.speakInstructor(`미션 실패! ${evalResult.failReason}`);
         onMissionFail(failure.reason, failure.score, failure.deductions);
       }
 
@@ -705,16 +713,16 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
                 if (parkingHoldTimer >= 1.5) {
                   const result = runState.finishSuccess();
                   if (!result) return;
-                  sounds.playSuccess();
-                  sounds.speakInstructor('축하합니다! 완벽하게 주차를 완료했습니다.');
+                  playAttemptResultSound(resultFeedbackEnabled, 'success', sounds);
+                  if (guidanceEnabled) sounds.speakInstructor('축하합니다! 완벽하게 주차를 완료했습니다.');
                   onMissionComplete(result.score, result.deductions);
                 }
               }
             } else {
               const result = runState.finishSuccess();
               if (!result) return;
-              sounds.playSuccess();
-              sounds.speakInstructor('축하합니다! 미션을 성공적으로 완주했습니다.');
+              playAttemptResultSound(resultFeedbackEnabled, 'success', sounds);
+              if (guidanceEnabled) sounds.speakInstructor('축하합니다! 미션을 성공적으로 완주했습니다.');
               onMissionComplete(result.score, result.deductions);
             }
           }
@@ -835,7 +843,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
       setVehicleAssetState({ status: 'error', message });
       return cleanup;
     }
-  }, [vehicle, mission, vehicleAssetState]);
+  }, [vehicle, mission, vehicleAssetState, guidanceEnabled, resultFeedbackEnabled]);
 
   return (
     <div ref={containerRef} className="w-full h-full relative cursor-crosshair overflow-hidden">
