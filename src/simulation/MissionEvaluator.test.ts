@@ -98,6 +98,10 @@ describe('MissionEvaluator — 깜빡이/미러 이관 체크', () => {
     });
     expect(r.penalties.map((p) => p.points)).toEqual([25, 20]);
     expect(r.penalties[0].reason).toContain('깜빡이');
+    expect(r.attemptEvents).toEqual([
+      expect.objectContaining({ type: 'procedure-omission', code: 'signal' }),
+      expect.objectContaining({ type: 'procedure-omission', code: 'blind-spot' }),
+    ]);
   });
 
   it('정지 상태 조향은 감점하지 않는다', () => {

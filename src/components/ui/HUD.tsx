@@ -46,6 +46,7 @@ interface HUDProps {
   inputs: ControlInputs;
   onGearChange: (gear: GearMode) => void;
   onMouseSteer: (ratio: number) => void;
+  showGuidance: boolean;
 }
 
 export const HUD: React.FC<HUDProps> = ({
@@ -65,6 +66,7 @@ export const HUD: React.FC<HUDProps> = ({
   inputs,
   onGearChange,
   onMouseSteer,
+  showGuidance,
 }) => {
   const isLeftBlink = carState.turnSignal === 'left' || carState.turnSignal === 'hazard';
   const isRightBlink = carState.turnSignal === 'right' || carState.turnSignal === 'hazard';
@@ -84,7 +86,7 @@ export const HUD: React.FC<HUDProps> = ({
       {/* 1. Top Section - Under Mirrors (Zero Overlaps) */}
       <div className="flex justify-between items-start pt-24 sm:pt-28 gap-4">
         {/* Mission Info Card */}
-        <div className="glass-panel rounded-2xl p-3 max-w-sm pointer-events-auto border-l-4 border-l-cyan-400 shadow-2xl backdrop-blur-xl">
+        {showGuidance && <div className="glass-panel rounded-2xl p-3 max-w-sm pointer-events-auto border-l-4 border-l-cyan-400 shadow-2xl backdrop-blur-xl">
           <div className="flex items-center gap-2">
             <span className="bg-cyan-500/20 text-cyan-400 text-[10px] font-black px-2 py-0.5 rounded-full border border-cyan-500/30">
               {mission.difficulty}
@@ -99,11 +101,11 @@ export const HUD: React.FC<HUDProps> = ({
             <span className="shrink-0 font-bold">💡 팁:</span>
             <span className="truncate">{mission.tip.replace('💡 팁: ', '').replace('💡 실전 팁: ', '')}</span>
           </div>
-        </div>
+        </div>}
 
         {/* Safety Score & Camera Switcher */}
         <div className="flex flex-col items-end gap-1.5 pointer-events-auto">
-          <div className="glass-panel rounded-2xl px-3.5 py-1.5 flex items-center gap-2.5 shadow-2xl border border-slate-700/60">
+          {showGuidance && <div className="glass-panel rounded-2xl px-3.5 py-1.5 flex items-center gap-2.5 shadow-2xl border border-slate-700/60">
             <div className="text-right">
               <div className="text-[9px] uppercase font-black tracking-wider text-slate-400">안전 점수</div>
               <div
@@ -114,7 +116,7 @@ export const HUD: React.FC<HUDProps> = ({
                 {score} <span className="text-[10px] font-normal text-slate-400">/ 100</span>
               </div>
             </div>
-          </div>
+          </div>}
 
           <button
             onClick={onCameraToggle}
@@ -137,7 +139,7 @@ export const HUD: React.FC<HUDProps> = ({
 
       {/* 2. Middle Notification Banners */}
       <div className="flex flex-col items-center gap-2">
-        {recentPenalty && (
+        {showGuidance && recentPenalty && (
           <div className="animate-bounce">
             <div className="bg-rose-600/95 text-white font-black text-xs sm:text-sm px-4 py-2 rounded-full shadow-2xl flex items-center gap-2 border border-rose-300 backdrop-blur-xl">
               <AlertTriangle className="w-4 h-4 text-yellow-300" />
@@ -146,14 +148,14 @@ export const HUD: React.FC<HUDProps> = ({
           </div>
         )}
 
-        {yieldingCar && (
+        {showGuidance && yieldingCar && (
           <div className="animate-pulse glass-panel-glow bg-emerald-950/85 border-emerald-400/80 px-4 py-2 rounded-full text-xs font-black text-emerald-300 flex items-center gap-2 shadow-2xl">
             <Sparkles className="w-4 h-4 text-emerald-400" />
             <span>🟢 [양보 신호] 뒤쪽 차량이 상향등을 깜빡이며 감속 중입니다! (안전 진입 가능)</span>
           </div>
         )}
 
-        {aggressiveCar && (
+        {showGuidance && aggressiveCar && (
           <div className="animate-pulse glass-panel bg-rose-950/90 border-rose-500 px-4 py-2 rounded-full text-xs font-black text-rose-300 flex items-center gap-2 shadow-2xl">
             <AlertTriangle className="w-4 h-4 text-rose-400" />
             <span>🔴 [위험 경고] 뒤쪽 차량이 양보 없이 가속 중입니다! 차선 변경을 멈추세요.</span>
@@ -163,7 +165,7 @@ export const HUD: React.FC<HUDProps> = ({
 
       {/* 3. Shoulder Check & Proximity Radar */}
       <div className="flex justify-between items-center px-1">
-        <div className="glass-panel p-2 rounded-2xl text-xs space-y-1 border border-slate-800 shadow-2xl backdrop-blur-xl">
+        {showGuidance && <div className="glass-panel p-2 rounded-2xl text-xs space-y-1 border border-slate-800 shadow-2xl backdrop-blur-xl">
           <div className="text-[10px] font-black text-slate-400 flex items-center gap-1">
             <Eye className="w-3.5 h-3.5 text-cyan-400" />
             사각지대 숄더체크
@@ -197,9 +199,9 @@ export const HUD: React.FC<HUDProps> = ({
               우측 (E)
             </span>
           </div>
-        </div>
+        </div>}
 
-        {sensors.minDistance > 0 && sensors.minDistance < 3.0 && (
+        {showGuidance && sensors.minDistance > 0 && sensors.minDistance < 3.0 && (
           <div className="glass-panel px-3 py-1.5 rounded-xl border border-amber-500/50 bg-amber-950/50 text-amber-300 font-bold text-xs flex items-center gap-1.5 animate-pulse shadow-xl">
             <ShieldAlert className="w-4 h-4 text-amber-400" />
             <span>거리: {sensors.minDistance.toFixed(1)}m</span>
@@ -210,7 +212,7 @@ export const HUD: React.FC<HUDProps> = ({
       {/* 4. Bottom Section: Left-Hand Controls + Large Steering Wheel + Speedometer Cluster */}
       <div className="flex flex-col lg:flex-row justify-between items-end gap-3 pb-1">
         {/* Left: Left-Hand Keyboard Control Guide (No Key Overlaps) */}
-        <div className="glass-panel p-3 rounded-2xl border border-slate-800 shadow-2xl pointer-events-auto space-y-2 max-w-xs sm:max-w-sm backdrop-blur-xl">
+        {showGuidance && <div className="glass-panel p-3 rounded-2xl border border-slate-800 shadow-2xl pointer-events-auto space-y-2 max-w-xs sm:max-w-sm backdrop-blur-xl">
           <div className="flex justify-between items-center text-[10px] font-black text-slate-400 pb-1 border-b border-slate-800">
             <span className="text-cyan-400 flex items-center gap-1">
               <Activity className="w-3 h-3" />
@@ -264,7 +266,7 @@ export const HUD: React.FC<HUDProps> = ({
               <span className={`px-1.5 py-0.5 rounded-lg font-mono font-black text-[10px] transition ${inputs.lookRight ? 'bg-cyan-400 text-slate-950 shadow-md' : 'bg-slate-800 text-slate-300'}`}>E 우미러</span>
             </div>
           </div>
-        </div>
+        </div>}
 
         {/* Center: Large Luxury Steering Wheel (Prominently Displayed & Controlled by Mouse) */}
         <LargeSteeringWheel
@@ -311,7 +313,7 @@ export const HUD: React.FC<HUDProps> = ({
           </div>
 
           {/* Toggles */}
-          <div className="glass-panel p-2 rounded-2xl flex items-center gap-1.5 border border-slate-800 shadow-2xl backdrop-blur-xl">
+          {showGuidance && <div className="glass-panel p-2 rounded-2xl flex items-center gap-1.5 border border-slate-800 shadow-2xl backdrop-blur-xl">
             <button
               onClick={onTrajectoryToggle}
               className={`px-2.5 py-1 rounded-xl text-xs font-black transition ${
@@ -332,7 +334,7 @@ export const HUD: React.FC<HUDProps> = ({
             >
               차폭 ({vehicle.width}m)
             </button>
-          </div>
+          </div>}
         </div>
       </div>
     </div>

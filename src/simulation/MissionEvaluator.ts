@@ -6,6 +6,7 @@ import {
   TrafficVehicleData,
 } from '../types/simulator';
 import { TrafficLightController } from './TrafficLightController';
+import { AttemptEvent, ProcedureOmissionCode } from './AttemptAssessment';
 
 export interface EvalContext {
   carState: CarState;
@@ -15,6 +16,7 @@ export interface EvalContext {
 
 export interface EvalResult {
   penalties: ScoreDeduction[];
+  attemptEvents: AttemptEvent[];
   failReason?: string;
 }
 
@@ -45,6 +47,7 @@ export class MissionEvaluator {
   private failMessage?: string;
   private seq = 0;
   private pending: ScoreDeduction[] = [];
+  private pendingEvents: AttemptEvent[] = [];
 
   constructor(
     private readonly mission: Mission,
@@ -53,6 +56,7 @@ export class MissionEvaluator {
 
   evaluate(ctx: EvalContext): EvalResult {
     this.pending = [];
+    this.pendingEvents = [];
     const { carState: car } = ctx;
 
     this.checkSignalAndMirror(car);
@@ -62,7 +66,11 @@ export class MissionEvaluator {
     this.checkUnprotectedLeft(ctx);
     this.checkRoundaboutYield(ctx);
 
-    return { penalties: this.pending, failReason: this.failed ? this.failMessage : undefined };
+    return {
+      penalties: this.pending,
+      attemptEvents: this.pendingEvents,
+      failReason: this.failed ? this.failMessage : undefined,
+    };
   }
 
   /** objective 조회 → 없으면 무시(다른 미션 호환), 있으면 감점. mandatory면 즉시 실패. */
@@ -89,6 +97,21 @@ export class MissionEvaluator {
       reason: `[감점] ${obj.text}`,
       points: obj.scorePenalty,
     });
+    const omissionCodes: Partial<Record<string, ProcedureOmissionCode>> = {
+      signal_check: 'signal',
+      signal_before_change: 'signal',
+      mirror_check: 'mirror',
+      shoulder_check: 'blind-spot',
+      speed_check: 'speed',
+    };
+    const omissionCode = omissionCodes[objectiveId];
+    if (omissionCode) {
+      this.pendingEvents.push({
+        type: 'procedure-omission',
+        code: omissionCode,
+        message: obj.text,
+      });
+    }
   }
 
   /** 기존 SimulationCanvas 판정 조건을 이관하고 미션별 objective 감점을 적용한다. */

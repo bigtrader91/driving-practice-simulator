@@ -23,12 +23,31 @@ import { VehicleSelector } from './components/ui/VehicleSelector';
 import { FeedbackModal } from './components/ui/FeedbackModal';
 import { ControlPanel } from './components/ui/ControlPanel';
 import { MobileControls } from './components/ui/MobileControls';
+import { TrainingFlowOverlay } from './components/ui/TrainingFlowOverlay';
 import { sounds } from './audio/soundEffects';
+import {
+  beginPostAssessment,
+  completeTrainingAttempt,
+  createTrainingSession,
+  hasActiveGuidance,
+  isTrainingAttemptActive,
+  shouldRevealAttemptResult,
+  startTrainingSession,
+} from './simulation/TrainingSession';
+import { missionForTrainingAttempt } from './simulation/TrainingMission';
+import {
+  assessMissionResult,
+  AttemptAssessment,
+  AttemptEvent,
+  isAttemptPassed,
+} from './simulation/AttemptAssessment';
+
+const LANE_CHANGE_MISSION = MISSIONS.find((mission) => mission.id === 'city_lane_change') ?? MISSIONS[0];
 
 export const App: React.FC = () => {
   // Config & Mission state
   const [currentVehicle, setCurrentVehicle] = useState<VehicleConfig>(VEHICLES.sedan);
-  const [currentMission, setCurrentMission] = useState<Mission>(MISSIONS[0]);
+  const [currentMission, setCurrentMission] = useState<Mission>(LANE_CHANGE_MISSION);
   const [cameraMode, setCameraMode] = useState<CameraViewMode>('cockpit');
   const [showTrajectory, setShowTrajectory] = useState(true);
   const [showWidthGuide, setShowWidthGuide] = useState(true);
@@ -42,6 +61,14 @@ export const App: React.FC = () => {
   const [lastCompletedScore, setLastCompletedScore] = useState(100);
   const [lastDeductions, setLastDeductions] = useState<ScoreDeduction[]>([]);
   const [failReason, setFailReason] = useState<string | null>(null);
+  const [trainingSession, setTrainingSession] = useState(createTrainingSession);
+  const [pendingAttemptResult, setPendingAttemptResult] = useState<{
+    score: number;
+    passed: boolean;
+    assessment: AttemptAssessment;
+  } | null>(null);
+  const trainingAttemptActive = isTrainingAttemptActive(trainingSession);
+  const showTrainingGuidance = hasActiveGuidance(trainingSession);
 
   // Real-time Sim State
   const [carState, setCarState] = useState<CarState>({
@@ -311,37 +338,62 @@ export const App: React.FC = () => {
     }, 2800);
   }, []);
 
-  const handleMissionComplete = useCallback((score: number, deductions: ScoreDeduction[]) => {
+  const handleMissionComplete = useCallback((
+    score: number,
+    deductions: ScoreDeduction[],
+    events: AttemptEvent[],
+  ) => {
+    const assessment = assessMissionResult(events);
     setLastCompletedScore(score);
     setLastDeductions(deductions);
+    setPendingAttemptResult({
+      score,
+      passed: isAttemptPassed(score >= 70, assessment),
+      assessment,
+    });
     setShowFeedbackModal(true);
   }, []);
 
-  const handleMissionFail = useCallback((reason: string, score: number, deductions: ScoreDeduction[]) => {
+  const handleMissionFail = useCallback((
+    reason: string,
+    score: number,
+    deductions: ScoreDeduction[],
+    events: AttemptEvent[],
+  ) => {
     setLastCompletedScore(score);
     setLastDeductions(deductions);
     setFailReason(reason);
+    setPendingAttemptResult({ score, passed: false, assessment: assessMissionResult(events) });
     setShowFeedbackModal(true);
   }, []);
 
-  const handleNextMission = useCallback(() => {
-    const currentIndex = MISSIONS.findIndex((m) => m.id === currentMission.id);
-    const nextMission = MISSIONS[(currentIndex + 1) % MISSIONS.length];
-    setCurrentMission(nextMission);
+  const handleNextTrainingAttempt = useCallback(() => {
+    if (!pendingAttemptResult) {
+      throw new Error('현재 훈련 시도의 완료 결과가 없습니다.');
+    }
+    const nextSession = completeTrainingAttempt(trainingSession, pendingAttemptResult);
+    setTrainingSession(nextSession);
+    setPendingAttemptResult(null);
     setShowFeedbackModal(false);
-    handleResetCar();
-  }, [currentMission, handleResetCar]);
+    setFailReason(null);
+    if (nextSession.lifecycle === 'active' && nextSession.currentAttempt) {
+      setCurrentMission(missionForTrainingAttempt(LANE_CHANGE_MISSION, nextSession.currentAttempt.direction));
+      handleResetCar();
+    }
+  }, [handleResetCar, pendingAttemptResult, trainingSession]);
 
   return (
     <div className="w-screen h-screen relative bg-slate-950 overflow-hidden select-none">
       {/* 3D Simulation Canvas */}
-      <SimulationCanvas
+      {trainingAttemptActive && <SimulationCanvas
         key={`${currentVehicle.id}-${currentMission.id}-${simKey}`}
         vehicle={currentVehicle}
         mission={currentMission}
         cameraMode={cameraMode}
-        showTrajectory={showTrajectory}
-        showWidthGuide={showWidthGuide}
+        showTrajectory={showTrainingGuidance && showTrajectory}
+        showWidthGuide={showTrainingGuidance && showWidthGuide}
+        guidanceEnabled={showTrainingGuidance}
+        resultFeedbackEnabled={shouldRevealAttemptResult(trainingSession.currentAttempt)}
         inputsRef={inputsRef}
         onStateUpdate={handleStateUpdate}
         onMissionComplete={handleMissionComplete}
@@ -352,7 +404,7 @@ export const App: React.FC = () => {
         rightMirrorCanvasRef={rightMirrorCanvasRef}
         rearMirrorCanvasRef={rearMirrorCanvasRef}
         backupCameraCanvasRef={backupCameraCanvasRef}
-      />
+      />}
 
       {/* Photorealistic Cockpit Frame */}
       <RealisticCockpitFrame
@@ -395,6 +447,7 @@ export const App: React.FC = () => {
         inputs={inputsRef.current}
         onGearChange={handleGearChange}
         onMouseSteer={handleMouseSteer}
+        showGuidance={showTrainingGuidance}
       />
 
       {/* Control Utility Toolbar */}
@@ -409,6 +462,10 @@ export const App: React.FC = () => {
         }}
         onGearSelect={handleGearChange}
         currentGear={carState.gear}
+        missionChangeDisabled={trainingAttemptActive}
+        vehicleChangeDisabled={trainingAttemptActive}
+        resetDisabled={trainingAttemptActive}
+        guidanceDisabled={trainingAttemptActive && !showTrainingGuidance}
       />
 
       {/* Mobile Touch Controls */}
@@ -448,11 +505,49 @@ export const App: React.FC = () => {
           mission={currentMission}
           score={lastCompletedScore}
           deductions={lastDeductions}
+          passed={pendingAttemptResult?.passed}
           failReason={failReason ?? undefined}
-          onRetry={handleResetCar}
-          onNextMission={handleNextMission}
+          onRetry={() => {
+            setPendingAttemptResult(null);
+            handleResetCar();
+          }}
+          onNextMission={handleNextTrainingAttempt}
+          nextLabel={
+            trainingSession.currentAttempt?.id === 'guided-right'
+              ? '사후 평가 안내 보기'
+              : trainingSession.currentAttempt?.id === 'post-5'
+                ? '결과 보기'
+                : trainingSession.currentAttempt?.phase === 'post-assessment'
+                  ? '다음 평가'
+                  : '다음 훈련'
+          }
+          isScored={trainingSession.currentAttempt?.scored ?? true}
+          revealResult={shouldRevealAttemptResult(trainingSession.currentAttempt)}
         />
       )}
+
+      <TrainingFlowOverlay
+        session={trainingSession}
+        onStart={() => {
+          const session = startTrainingSession(trainingSession);
+          if (!session.currentAttempt) throw new Error('첫 훈련 시도가 생성되지 않았습니다.');
+          setCurrentMission(missionForTrainingAttempt(LANE_CHANGE_MISSION, session.currentAttempt.direction));
+          setTrainingSession(session);
+          handleResetCar();
+        }}
+        onBeginPostAssessment={() => {
+          const session = beginPostAssessment(trainingSession);
+          if (!session.currentAttempt) throw new Error('사후 평가 시도가 생성되지 않았습니다.');
+          setCurrentMission(missionForTrainingAttempt(LANE_CHANGE_MISSION, session.currentAttempt.direction));
+          setTrainingSession(session);
+          handleResetCar();
+        }}
+        onRestart={() => {
+          setTrainingSession(createTrainingSession());
+          setPendingAttemptResult(null);
+          handleResetCar();
+        }}
+      />
     </div>
   );
 };
