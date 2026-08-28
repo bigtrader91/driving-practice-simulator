@@ -1,6 +1,13 @@
 import type { ControlInputs } from '../types/simulator';
 
-type MobileControl = 'forward' | 'backward' | 'steerLeft' | 'steerRight';
+type MobileControl =
+  | 'forward'
+  | 'backward'
+  | 'steerLeft'
+  | 'steerRight'
+  | 'lookLeft'
+  | 'lookRear'
+  | 'lookRight';
 
 export const setMobileControl = (
   inputs: ControlInputs,
@@ -13,7 +20,10 @@ export const setMobileControl = (
   }
 };
 
-export const releaseTransientInputs = (inputs: ControlInputs): void => {
+export const releaseTransientInputs = (
+  inputs: ControlInputs,
+  resetPointerSteering = false,
+): void => {
   inputs.forward = false;
   inputs.backward = false;
   inputs.steerLeft = false;
@@ -34,4 +44,8 @@ export const releaseTransientInputs = (inputs: ControlInputs): void => {
   inputs.toggleTrajectory = false;
   inputs.toggleWidthGuide = false;
   inputs.resetPosition = false;
+  if (resetPointerSteering) {
+    inputs.mouseSteerRatio = 0;
+    inputs.isMouseSteeringActive = true;
+  }
 };

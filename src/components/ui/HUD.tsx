@@ -80,6 +80,9 @@ export const HUD: React.FC<HUDProps> = ({
   );
 
   const speedRatio = Math.min(1, Math.abs(carState.speed) / 120);
+  const mobileSpeedPosition = carState.gear === 'R'
+    ? 'bottom-96 right-3 sm:bottom-2 sm:left-1/2 sm:right-auto sm:-translate-x-1/2'
+    : 'bottom-52 right-3 sm:bottom-2 sm:left-1/2 sm:right-auto sm:-translate-x-1/2';
 
   return (
     <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-3 sm:p-4 select-none z-10">
@@ -212,7 +215,7 @@ export const HUD: React.FC<HUDProps> = ({
       {/* 4. Bottom Section: Left-Hand Controls + Large Steering Wheel + Speedometer Cluster */}
       <div className="flex flex-col lg:flex-row justify-between items-end gap-3 pb-1">
         {/* Left: Left-Hand Keyboard Control Guide (No Key Overlaps) */}
-        {showGuidance && <div className="glass-panel p-3 rounded-2xl border border-slate-800 shadow-2xl pointer-events-auto space-y-2 max-w-xs sm:max-w-sm backdrop-blur-xl">
+        {showGuidance && <div className="hidden lg:block glass-panel p-3 rounded-2xl border border-slate-800 shadow-2xl pointer-events-auto space-y-2 max-w-xs sm:max-w-sm backdrop-blur-xl">
           <div className="flex justify-between items-center text-[10px] font-black text-slate-400 pb-1 border-b border-slate-800">
             <span className="text-cyan-400 flex items-center gap-1">
               <Activity className="w-3 h-3" />
@@ -269,15 +272,17 @@ export const HUD: React.FC<HUDProps> = ({
         </div>}
 
         {/* Center: Large Luxury Steering Wheel (Prominently Displayed & Controlled by Mouse) */}
-        <LargeSteeringWheel
-          steeringWheelDegrees={carState.steeringWheelDegrees}
-          steeringWheelTurns={carState.steeringWheelTurns}
-          steerAngle={carState.steerAngle}
-          onMouseSteer={onMouseSteer}
-        />
+        <div className="hidden lg:block">
+          <LargeSteeringWheel
+            steeringWheelDegrees={carState.steeringWheelDegrees}
+            steeringWheelTurns={carState.steeringWheelTurns}
+            steerAngle={carState.steerAngle}
+            onMouseSteer={onMouseSteer}
+          />
+        </div>
 
         {/* Right: Digital Speedometer Cluster & Helper Toggles */}
-        <div className="flex flex-col items-end gap-2 pointer-events-auto">
+        <div className={`absolute ${mobileSpeedPosition} flex flex-col items-end gap-2 pointer-events-auto lg:static lg:translate-x-0`}>
           {/* Speedometer Cluster */}
           <div className="glass-panel-glow rounded-3xl px-5 py-3 flex items-center gap-4 shadow-2xl border border-cyan-500/40 backdrop-blur-2xl">
             <div
@@ -313,7 +318,7 @@ export const HUD: React.FC<HUDProps> = ({
           </div>
 
           {/* Toggles */}
-          {showGuidance && <div className="glass-panel p-2 rounded-2xl flex items-center gap-1.5 border border-slate-800 shadow-2xl backdrop-blur-xl">
+          {showGuidance && <div className="hidden lg:flex glass-panel p-2 rounded-2xl items-center gap-1.5 border border-slate-800 shadow-2xl backdrop-blur-xl">
             <button
               onClick={onTrajectoryToggle}
               className={`px-2.5 py-1 rounded-xl text-xs font-black transition ${

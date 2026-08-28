@@ -93,7 +93,7 @@ export const MirrorOverlay: React.FC<MirrorOverlayProps> = ({
 
       {/* 4. Backup Camera Screen (Active when Gear is 'R', Positioned Cleanly at Bottom Right above controls) */}
       <div
-        className={`absolute bottom-28 right-4 pointer-events-none ${
+        className={`absolute bottom-52 right-4 pointer-events-none sm:bottom-28 ${
           gear === 'R' ? 'animate-in fade-in zoom-in-95 duration-200' : 'hidden'
         }`}
       >
@@ -102,7 +102,7 @@ export const MirrorOverlay: React.FC<MirrorOverlayProps> = ({
             ref={backupCameraCanvasRef}
             width={260}
             height={160}
-            className="w-52 sm:w-64 h-32 sm:h-40 object-cover"
+            className="h-32 w-52 object-cover sm:h-24 sm:w-40 md:h-32 md:w-52 lg:h-40 lg:w-64"
           />
           {/* Dynamic Parking Trajectory Guidelines */}
           <div className="absolute inset-0 pointer-events-none flex flex-col justify-end items-center pb-2">

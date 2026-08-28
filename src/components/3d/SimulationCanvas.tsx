@@ -242,7 +242,11 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
     if (backupCameraCanvasRef?.current) {
       backupRenderer = new THREE.WebGLRenderer({ canvas: backupCameraCanvasRef.current, antialias: true });
       cleanupSteps.push({ label: 'backup camera renderer', cleanup: () => backupRenderer?.dispose() });
-      backupRenderer.setSize(backupCameraCanvasRef.current.width, backupCameraCanvasRef.current.height);
+      backupRenderer.setSize(
+        backupCameraCanvasRef.current.width,
+        backupCameraCanvasRef.current.height,
+        false,
+      );
     }
 
     // 2. Lighting & Sunlight
