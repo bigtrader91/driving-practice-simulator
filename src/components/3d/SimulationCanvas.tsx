@@ -22,7 +22,7 @@ import { consumeGearCommand } from '../../simulation/GearInput';
 import { getGuideVisibility } from '../../simulation/GuideVisibility';
 import { updateKeyboardSteeringRatio } from '../../simulation/SteeringInput';
 import { advanceVehiclePose, updateLongitudinalMotion } from '../../simulation/VehicleMotion';
-import { resetIfOutsideWorldBounds } from '../../simulation/WorldBounds';
+import { resetIfVehiclePoseUnrecoverable } from '../../simulation/WorldBounds';
 import { playAttemptResultSound, playInstructionalWarning } from '../../simulation/TrainingGuidanceAudio';
 import {
   assessMissionResult,
@@ -100,7 +100,7 @@ export const SimulationAssetErrorOverlay = ({ message }: { message: string }) =>
     aria-live="assertive"
     className="absolute inset-x-4 top-4 z-20 rounded-lg border border-red-400 bg-red-950/95 p-4 text-sm text-red-100 shadow-lg"
   >
-    <p className="font-semibold">교통 차량 모델을 불러오지 못했습니다.</p>
+    <p className="font-semibold">차량 모델을 불러오지 못했습니다.</p>
     <p className="mt-1 break-all">{message}</p>
     <p className="mt-2">다시 시도하려면 페이지를 새로고침해 주세요.</p>
   </div>
@@ -112,7 +112,7 @@ export const SimulationAssetLoadingOverlay = () => (
     aria-live="polite"
     className="absolute inset-x-4 top-4 z-20 rounded-lg border border-sky-400 bg-slate-950/90 p-4 text-sm text-sky-100 shadow-lg"
   >
-    교통 차량 모델을 불러오는 중입니다.
+    차량 모델을 불러오는 중입니다.
   </div>
 );
 
@@ -264,7 +264,10 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
     scene.add(sunLight);
 
     // 3. Track Scene & Traffic
-    const { trackGroup, obstacles, initialTraffic, signals } = buildTrackScene(mission);
+    const { trackGroup, obstacles, initialTraffic, signals } = buildTrackScene(
+      mission,
+      (color) => vehicleAssets.createVehicle('sedan', color).group,
+    );
     const attemptEvents: AttemptEvent[] = [];
     scene.add(trackGroup);
 
@@ -289,7 +292,10 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
     });
 
     // 4. Player Car Mesh
-    const car3D = createCar3DGroup(vehicle);
+    const car3D = createCar3DGroup(
+      vehicle,
+      vehicleAssets.createVehicle(vehicle.id, vehicle.color),
+    );
     scene.add(car3D.carGroup);
 
     // 5. Cameras (Near plane at 0.05)
@@ -517,9 +523,13 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
         car3D.rearRightWheel.rotation.x += wheelRoll;
       }
 
-      if (resetIfOutsideWorldBounds(carState, onReset)) {
+      if (resetIfVehiclePoseUnrecoverable(
+        carState,
+        { pitch: car3D.carGroup.rotation.x, roll: car3D.carGroup.rotation.z },
+        onReset,
+      )) {
         sounds.playWarning();
-        sounds.speakInstructor('주행 가능 구역을 벗어나 훈련을 다시 시작합니다.');
+        sounds.speakInstructor('차량 자세를 복구할 수 없어 훈련을 다시 시작합니다.');
         return;
       }
 

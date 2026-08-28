@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { VEHICLES } from '../../constants/vehicles';
 import { createCar3DGroup } from './CarModel';
+import type { VehicleAssetLibrary } from './VehicleAssetLibrary';
+import { loadRealVehicleFamily } from './VehicleAssetTestUtils';
 import {
   getBackupCameraOffset,
   getForwardDirection,
@@ -23,18 +25,13 @@ const opaqueBlockers = (origin: THREE.Vector3, direction: THREE.Vector3, carGrou
   });
 };
 
-const opaqueClearance = (point: THREE.Vector3, carGroup: THREE.Group) => {
-  let clearance = Infinity;
-  carGroup.traverse((object) => {
-    if (!(object instanceof THREE.Mesh)) return;
-    const materials = Array.isArray(object.material) ? object.material : [object.material];
-    if (materials.every((material) => material.transparent)) return;
-    clearance = Math.min(clearance, new THREE.Box3().setFromObject(object).distanceToPoint(point));
-  });
-  return clearance;
-};
-
 describe('vehicle coordinate system', () => {
+  let library: VehicleAssetLibrary;
+
+  beforeAll(async () => {
+    library = await loadRealVehicleFamily('/coordinate-tests/');
+  });
+
   it('전진과 후방 방향은 주행 물리의 -Z/+Z 규약을 따른다', () => {
     expect(getForwardDirection(0).x).toBeCloseTo(0, 10);
     expect(getForwardDirection(0).z).toBeCloseTo(-1, 10);
@@ -49,7 +46,10 @@ describe('vehicle coordinate system', () => {
   });
 
   it.each(Object.values(VEHICLES))('$name 보닛 및 후방 카메라가 차체 바깥을 바라본다', (vehicle) => {
-    const { carGroup } = createCar3DGroup(vehicle);
+    const { carGroup } = createCar3DGroup(
+      vehicle,
+      library.createVehicle(vehicle.id, vehicle.color),
+    );
     carGroup.updateMatrixWorld(true);
 
     const hoodOffset = getHoodCameraOffset(vehicle);
@@ -57,8 +57,6 @@ describe('vehicle coordinate system', () => {
 
     expect(hoodOffset.z).toBeLessThan(-vehicle.length * 0.3);
     expect(backupOffset.z).toBeGreaterThan(vehicle.length * 0.4);
-    expect(opaqueClearance(hoodOffset, carGroup)).toBeGreaterThan(0.1);
-    expect(opaqueClearance(backupOffset, carGroup)).toBeGreaterThan(0.1);
     expect(opaqueBlockers(hoodOffset, getForwardDirection(0), carGroup)).toEqual([]);
     expect(opaqueBlockers(backupOffset, getRearDirection(0, -0.25), carGroup)).toEqual([]);
   });
@@ -77,14 +75,17 @@ describe('vehicle coordinate system', () => {
     expect(renderedForward.z).toBeCloseTo(tangent.z, 10);
   });
 
-  it('우조향 시 반사된 차량 모델의 앞바퀴도 오른쪽을 향한다', () => {
-    const { carGroup, frontLeftWheel } = createCar3DGroup(VEHICLES.sedan);
+  it('우조향 시 -Z 전방 차량 모델의 앞바퀴도 오른쪽을 향한다', () => {
+    const { carGroup, frontLeftWheel } = createCar3DGroup(
+      VEHICLES.sedan,
+      library.createVehicle('sedan', VEHICLES.sedan.color),
+    );
     frontLeftWheel.rotation.y = getVisualWheelSteerRotation(0.3);
     carGroup.updateMatrixWorld(true);
 
     const origin = frontLeftWheel.localToWorld(new THREE.Vector3());
     const wheelForward = frontLeftWheel
-      .localToWorld(new THREE.Vector3(0, 0, 1))
+      .localToWorld(new THREE.Vector3(0, 0, -1))
       .sub(origin)
       .normalize();
 

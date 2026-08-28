@@ -20,7 +20,6 @@ export interface BoundVehicleAsset {
 }
 
 const meshNames = [
-  'BODY',
   'GLASS_FRONT',
   'GLASS_REAR',
   'GLASS_LEFT',
@@ -35,7 +34,7 @@ const meshNames = [
   'BLINKER_RR',
 ] as const;
 
-const objectNames = ['WHEEL_FL', 'WHEEL_FR', 'WHEEL_RL', 'WHEEL_RR'] as const;
+const objectNames = ['BODY', 'WHEEL_FL', 'WHEEL_FR', 'WHEEL_RL', 'WHEEL_RR'] as const;
 const playerObjectNames = ['STEERING_WHEEL', 'WIPER_L', 'WIPER_R'] as const;
 const mutableMaterialNames = new Set(['PAINT', 'HEADLIGHT', 'BRAKE', 'BLINKER']);
 

@@ -24,27 +24,37 @@ const requiredNodeNames = [
   'BLINKER_RR',
 ] as const;
 
-const parseRuntimeScene = async () => {
-  const previousSelf = Reflect.get(globalThis, 'self');
-  const previousCreateImageBitmap = Reflect.get(globalThis, 'createImageBitmap');
-  Object.assign(globalThis, {
-    self: globalThis,
-    createImageBitmap: async () => ({ width: 1, height: 1 }),
-  });
-  try {
-    const bytes = await readFile('public/models/vehicles/traffic-compact.glb');
-    const data = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-    const gltf = await new GLTFLoader().parseAsync(data, '');
-    return gltf.scene;
-  } finally {
-    if (previousSelf === undefined) Reflect.deleteProperty(globalThis, 'self');
-    else Reflect.set(globalThis, 'self', previousSelf);
-    if (previousCreateImageBitmap === undefined) {
-      Reflect.deleteProperty(globalThis, 'createImageBitmap');
-    } else {
-      Reflect.set(globalThis, 'createImageBitmap', previousCreateImageBitmap);
+let parseQueue = Promise.resolve<unknown>(undefined);
+
+const parseRuntimeScene = (kind = 'traffic-compact'): Promise<THREE.Group> => {
+  const parse = async () => {
+    const previousSelf = Reflect.get(globalThis, 'self');
+    const previousCreateImageBitmap = Reflect.get(globalThis, 'createImageBitmap');
+    Object.assign(globalThis, {
+      self: globalThis,
+      createImageBitmap: async () => ({ width: 1, height: 1 }),
+    });
+    try {
+      const resolvedKind = kind.endsWith('.glb')
+        ? kind.split('/').at(-1)!.replace('.glb', '')
+        : kind;
+      const bytes = await readFile(`public/models/vehicles/${resolvedKind}.glb`);
+      const data = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+      const gltf = await new GLTFLoader().parseAsync(data, '');
+      return gltf.scene;
+    } finally {
+      if (previousSelf === undefined) Reflect.deleteProperty(globalThis, 'self');
+      else Reflect.set(globalThis, 'self', previousSelf);
+      if (previousCreateImageBitmap === undefined) {
+        Reflect.deleteProperty(globalThis, 'createImageBitmap');
+      } else {
+        Reflect.set(globalThis, 'createImageBitmap', previousCreateImageBitmap);
+      }
     }
-  }
+  };
+  const result = parseQueue.then(parse, parse);
+  parseQueue = result.then(() => undefined, () => undefined);
+  return result;
 };
 
 const namedMaterial = (mesh: THREE.Mesh, name: string) => {
@@ -53,6 +63,26 @@ const namedMaterial = (mesh: THREE.Mesh, name: string) => {
 };
 
 describe('vehicle asset library', () => {
+  it('loads the complete vehicle family before exposing type-specific clones', async () => {
+    const loadScene = vi.fn(async (url: string) => {
+      const kind = url.split('/').at(-1)!.replace('.glb', '');
+      return parseRuntimeScene(kind);
+    });
+
+    const library = await loadVehicleAssetLibrary('/family/', loadScene);
+
+    expect(loadScene.mock.calls.map(([url]) => url)).toEqual([
+      '/family/models/vehicles/compact.glb',
+      '/family/models/vehicles/sedan.glb',
+      '/family/models/vehicles/suv.glb',
+      '/family/models/vehicles/truck.glb',
+    ]);
+    expect(library.createVehicle('compact', 0x2563eb).group).toBeInstanceOf(THREE.Group);
+    expect(library.createVehicle('sedan', 0xdc2626).group).toBeInstanceOf(THREE.Group);
+    expect(library.createVehicle('suv', 0x059669).group).toBeInstanceOf(THREE.Group);
+    expect(library.createVehicle('truck', 0xd97706).group).toBeInstanceOf(THREE.Group);
+  });
+
   it('parses the real traffic sedan with the runtime node and orientation contract', async () => {
     const root = await parseRuntimeScene();
 
@@ -116,11 +146,7 @@ describe('vehicle asset library', () => {
   });
 
   it('normalizes the base URL and caches one in-flight promise before loading', async () => {
-    let release!: (scene: THREE.Group) => void;
-    const pendingScene = new Promise<THREE.Group>((resolve) => {
-      release = resolve;
-    });
-    const loadScene = vi.fn(() => pendingScene);
+    const loadScene = vi.fn((url: string) => parseRuntimeScene(url));
 
     const first = loadVehicleAssetLibrary('/game///', loadScene);
     const second = loadVehicleAssetLibrary('/game', loadScene);
@@ -128,10 +154,12 @@ describe('vehicle asset library', () => {
     expect(first).toBe(second);
     expect(loadScene).not.toHaveBeenCalled();
     await Promise.resolve();
-    expect(loadScene).toHaveBeenCalledOnce();
-    expect(loadScene).toHaveBeenCalledWith('/game/models/vehicles/traffic-compact.glb');
-
-    release(await parseRuntimeScene());
+    expect(loadScene.mock.calls.map(([url]) => url)).toEqual([
+      '/game/models/vehicles/compact.glb',
+      '/game/models/vehicles/sedan.glb',
+      '/game/models/vehicles/suv.glb',
+      '/game/models/vehicles/truck.glb',
+    ]);
     await expect(first).resolves.toBe(await second);
   });
 
@@ -146,7 +174,7 @@ describe('vehicle asset library', () => {
     expect(rejected).toBeInstanceOf(Error);
     expect(rejected).toMatchObject({ cause: originalError });
     expect((rejected as Error).message).toBe(
-      'Failed to load vehicle asset /missing/models/vehicles/traffic-compact.glb: 404',
+      'Failed to load vehicle asset /missing/models/vehicles/compact.glb: 404',
     );
 
     const replacementLoader = vi.fn(async () => parseRuntimeScene());
@@ -154,9 +182,9 @@ describe('vehicle asset library', () => {
 
     expect(second).toBe(first);
     await expect(second).rejects.toThrow(
-      'Failed to load vehicle asset /missing/models/vehicles/traffic-compact.glb: 404',
+      'Failed to load vehicle asset /missing/models/vehicles/compact.glb: 404',
     );
-    expect(loadScene).toHaveBeenCalledOnce();
+    expect(loadScene).toHaveBeenCalledTimes(4);
     expect(replacementLoader).not.toHaveBeenCalled();
   });
 
@@ -164,11 +192,11 @@ describe('vehicle asset library', () => {
     const promise = loadVehicleAssetLibrary('/malformed///', async () => new THREE.Group());
 
     await expect(promise).rejects.toThrow(
-      'Failed to load vehicle asset /malformed/models/vehicles/traffic-compact.glb: '
-      + 'traffic-compact vehicle asset is missing nodes: BLINKER_FL, BLINKER_FR, '
+      'Failed to load vehicle asset /malformed/models/vehicles/compact.glb: '
+      + 'compact vehicle asset is missing nodes: BLINKER_FL, BLINKER_FR, '
       + 'BLINKER_RL, BLINKER_RR, BODY, BRAKE_L, BRAKE_R, GLASS_FRONT, GLASS_LEFT, '
-      + 'GLASS_REAR, GLASS_RIGHT, HEADLIGHT_L, HEADLIGHT_R, WHEEL_FL, WHEEL_FR, '
-      + 'WHEEL_RL, WHEEL_RR',
+      + 'GLASS_REAR, GLASS_RIGHT, HEADLIGHT_L, HEADLIGHT_R, STEERING_WHEEL, WHEEL_FL, '
+      + 'WHEEL_FR, WHEEL_RL, WHEEL_RR, WIPER_L, WIPER_R',
     );
   });
 
@@ -181,7 +209,7 @@ describe('vehicle asset library', () => {
     const rejected = await promise.catch((error: unknown) => error);
     expect(rejected).toMatchObject({
       message: 'Failed to load vehicle asset '
-        + '/sync-throw/models/vehicles/traffic-compact.glb: synchronous decoder failure',
+        + '/sync-throw/models/vehicles/compact.glb: synchronous decoder failure',
       cause: originalError,
     });
   });

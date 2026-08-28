@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { Mission, ScoreDeduction } from '../../types/simulator';
-import { Award, CheckCircle2, RotateCcw, ArrowRight, ShieldCheck, XCircle } from 'lucide-react';
+import { Award, CheckCircle2, RotateCcw, ArrowRight, Map, ShieldCheck, XCircle } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 interface FeedbackModalProps {
@@ -10,6 +10,7 @@ interface FeedbackModalProps {
   passed?: boolean;
   failReason?: string;
   onRetry: () => void;
+  onSelectMission?: () => void;
   onNextMission: () => void;
   nextLabel?: string;
   isScored?: boolean;
@@ -23,6 +24,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
   passed,
   failReason,
   onRetry,
+  onSelectMission,
   onNextMission,
   nextLabel = '다음 코스 도전',
   isScored = true,
@@ -113,13 +115,20 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
         </div>}
 
         {/* Buttons */}
-        <div className="flex gap-3 pt-2">
+        <div className="flex flex-col gap-3 pt-2 sm:flex-row">
           {revealResult && <button
             onClick={onRetry}
             className="flex-1 py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-bold flex items-center justify-center gap-2 transition"
           >
             <RotateCcw className="w-4 h-4" />
             <span>다시 연습하기</span>
+          </button>}
+          {revealResult && isScored && !isPassed && onSelectMission && <button
+            onClick={onSelectMission}
+            className="flex-1 py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-bold flex items-center justify-center gap-2 transition"
+          >
+            <Map className="w-4 h-4" />
+            <span>미션 선택</span>
           </button>}
           <button
             onClick={onNextMission}

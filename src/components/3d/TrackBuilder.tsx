@@ -23,7 +23,9 @@ export interface TrafficSignalRig {
   };
 }
 
-export const buildTrackScene = (mission: Mission): {
+export type CreateParkedVehicle = (color: number) => THREE.Group;
+
+export const buildTrackScene = (mission: Mission, createParkedVehicle: CreateParkedVehicle): {
   trackGroup: THREE.Group;
   obstacles: CollisionObstacle[];
   initialTraffic: TrafficVehicleData[];
@@ -169,15 +171,7 @@ export const buildTrackScene = (mission: Mission): {
 
   // Helper: Create a parked obstacle car
   const createParkedCar = (x: number, z: number, heading: number, color: number, name = '주차 차량') => {
-    const carG = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.25, metalness: 0.7 });
-    const body = new THREE.Mesh(new THREE.BoxGeometry(1.82, 0.65, 4.65), mat);
-    body.position.y = 0.45;
-    body.castShadow = true;
-    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.6, 2.5), new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.1 }));
-    cabin.position.set(0, 0.95, -0.2);
-    carG.add(body);
-    carG.add(cabin);
+    const carG = createParkedVehicle(color);
 
     carG.position.set(x, 0, z);
     carG.rotation.y = heading;

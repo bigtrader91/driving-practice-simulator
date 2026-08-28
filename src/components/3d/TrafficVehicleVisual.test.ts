@@ -86,17 +86,13 @@ const makeAsset = (): BoundVehicleAsset => {
 };
 
 const makeLibrary = () => {
+  const createVehicle = vi.fn(() => makeAsset());
   const createTrafficSedan = vi.fn(() => makeAsset());
   return {
-    library: { createTrafficSedan } satisfies VehicleAssetLibrary,
+    library: { createVehicle, createTrafficSedan } satisfies VehicleAssetLibrary,
+    createVehicle,
     createTrafficSedan,
   };
-};
-
-const dimensionsOf = (mesh: THREE.Mesh) => {
-  const geometry = mesh.geometry as THREE.BoxGeometry;
-  const { width, height, depth } = geometry.parameters;
-  return [width, height, depth];
 };
 
 const lightIntensity = (mesh: THREE.Mesh) => (
@@ -105,74 +101,26 @@ const lightIntensity = (mesh: THREE.Mesh) => (
 
 const materialOf = (mesh: THREE.Mesh) => mesh.material as THREE.MeshStandardMaterial;
 
-const expectProceduralLiterals = (
-  visual: ReturnType<typeof createTrafficVehicleVisual>,
-  dimensions: { width: number; length: number; height: number },
-) => {
-  const { width, length, height } = dimensions;
-  const [body, cabin] = visual.group.children as THREE.Mesh[];
-  expect(dimensionsOf(body)).toEqual([width, height * 0.45, length]);
-  expect(body.position.toArray()).toEqual([0, height * 0.225 + 0.25, 0]);
-  expect(dimensionsOf(cabin)).toEqual([width * 0.9, height * 0.45, length * 0.5]);
-  expect(cabin.position.toArray()).toEqual([0, height * 0.65 + 0.25, length * 0.05]);
-  expect(materialOf(body)).toMatchObject({
-    roughness: 0.22,
-    metalness: 0.7,
-  });
-  expect(materialOf(body).color.getHex()).toBe(0x2563eb);
-
-  const expectedX = [-width * 0.35, width * 0.35];
-  visual.headlights.forEach((light, index) => {
-    expect(dimensionsOf(light)).toEqual([0.25, 0.12, 0.05]);
-    expect(light.position.toArray()).toEqual([
-      expectedX[index],
-      height * 0.3 + 0.25,
-      -length / 2 - 0.02,
-    ]);
-    expect(materialOf(light).color.getHex()).toBe(0xffffff);
-    expect(materialOf(light).emissive.getHex()).toBe(0xffffff);
-    expect(materialOf(light).emissiveIntensity).toBe(1);
-  });
-  visual.brakeLights.forEach((light, index) => {
-    expect(dimensionsOf(light)).toEqual([0.25, 0.12, 0.05]);
-    expect(light.position.toArray()).toEqual([
-      expectedX[index],
-      height * 0.3 + 0.25,
-      length / 2 + 0.02,
-    ]);
-    expect(materialOf(light).color.getHex()).toBe(0xff0000);
-    expect(materialOf(light).emissive.getHex()).toBe(0xaa0000);
-    expect(materialOf(light).emissiveIntensity).toBe(0.4);
-  });
-  expect(visual.group.scale.toArray()).toEqual([1, 1, 1]);
-};
 
 describe('traffic vehicle visual', () => {
-  it('selects the loaded asset only for sedan traffic', () => {
-    const { library, createTrafficSedan } = makeLibrary();
+  it('uses a loaded clone for sedan, SUV, and truck traffic without a procedural fallback', () => {
+    const createVehicle = vi.fn((type: 'sedan' | 'suv' | 'truck') => {
+      const asset = makeAsset();
+      asset.group.name = `LOADED_${type.toUpperCase()}`;
+      return asset;
+    });
+    const library = { createVehicle } as unknown as VehicleAssetLibrary;
 
-    const sedan = createTrafficVehicleVisual(makeTraffic('sedan'), library);
-    const suv = createTrafficVehicleVisual(makeTraffic('suv'), library);
-    const truck = createTrafficVehicleVisual(makeTraffic('truck'), library);
+    const visuals = (['sedan', 'suv', 'truck'] as const).map((type) => (
+      createTrafficVehicleVisual(makeTraffic(type), library)
+    ));
 
-    expect(sedan.group.name).toBe('LOADED_TRAFFIC_COMPACT');
-    expect(suv.group.name).toBe('PROCEDURAL_TRAFFIC_SUV');
-    expect(truck.group.name).toBe('PROCEDURAL_TRAFFIC_TRUCK');
-    expect(createTrafficSedan).toHaveBeenCalledOnce();
-    expect(createTrafficSedan).toHaveBeenCalledWith(0x2563eb);
-  });
-
-  it('preserves the procedural SUV and truck body, cabin, and lamp literals', () => {
-    const { library } = makeLibrary();
-
-    const suv = createTrafficVehicleVisual(makeTraffic('suv'), library);
-    const truck = createTrafficVehicleVisual(makeTraffic('truck'), library);
-    expectProceduralLiterals(suv, { width: 2, length: 4.9, height: 1.7 });
-    expectProceduralLiterals(truck, { width: 2.3, length: 7.5, height: 2.8 });
-    expect(suv.wheels).toHaveLength(4);
-    expect(truck.wheels).toHaveLength(4);
-    expect(materialOf(suv.headlights[0])).not.toBe(materialOf(truck.headlights[0]));
-    expect(materialOf(suv.brakeLights[0])).not.toBe(materialOf(truck.brakeLights[0]));
+    expect(visuals.map(({ group }) => group.name)).toEqual([
+      'LOADED_SEDAN',
+      'LOADED_SUV',
+      'LOADED_TRUCK',
+    ]);
+    expect(createVehicle.mock.calls.map(([type]) => type)).toEqual(['sedan', 'suv', 'truck']);
   });
 
   it('uses existing traffic headings without a negative scale', () => {
@@ -272,10 +220,10 @@ describe('traffic vehicle visual', () => {
       .map((mesh) => vi.spyOn(materialOf(mesh), 'dispose'));
     const glass = asset.group.getObjectByName('GLASS_FRONT') as THREE.Mesh;
     const glassMaterialDispose = vi.spyOn(materialOf(glass), 'dispose');
-    const createTrafficSedan = vi.fn(() => asset);
+    const createVehicle = vi.fn(() => asset);
     const visual = createTrafficVehicleVisual(
       makeTraffic('sedan'),
-      { createTrafficSedan },
+      { createVehicle, createTrafficSedan: vi.fn() },
     );
 
     disposeTrafficVehicleVisual(visual);
@@ -286,43 +234,21 @@ describe('traffic vehicle visual', () => {
     expect(glassMaterialDispose).not.toHaveBeenCalled();
   });
 
-  it('disposes every procedural geometry and material exactly once', () => {
-    const { library } = makeLibrary();
-    const visual = createTrafficVehicleVisual(makeTraffic('suv'), library);
-    const geometries = new Set<THREE.BufferGeometry>();
-    const materials = new Set<THREE.Material>();
-    visual.group.traverse((object) => {
-      if (!(object instanceof THREE.Mesh)) return;
-      geometries.add(object.geometry);
-      materials.add(materialOf(object));
-    });
-    const geometryDisposals = [...geometries].map((geometry) => vi.spyOn(geometry, 'dispose'));
-    const materialDisposals = [...materials].map((material) => vi.spyOn(material, 'dispose'));
-
-    disposeTrafficVehicleVisual(visual);
-    disposeTrafficVehicleVisual(visual);
-
-    geometryDisposals.forEach((dispose) => expect(dispose).toHaveBeenCalledOnce());
-    materialDisposals.forEach((dispose) => expect(dispose).toHaveBeenCalledOnce());
-  });
-
   it('attempts every owned disposal after a failure and remains terminally idempotent', () => {
     const { library } = makeLibrary();
     const visual = createTrafficVehicleVisual(makeTraffic('suv'), library);
-    const geometries = new Set<THREE.BufferGeometry>();
     const materials = new Set<THREE.Material>();
     visual.group.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) return;
-      geometries.add(object.geometry);
-      materials.add(materialOf(object));
+      if (['PAINT', 'HEADLIGHT', 'BRAKE', 'BLINKER'].includes(materialOf(object).name)) {
+        materials.add(materialOf(object));
+      }
     });
-    const [firstGeometry, ...remainingGeometries] = [...geometries];
-    const firstDispose = vi.spyOn(firstGeometry, 'dispose').mockImplementation(() => {
-      throw new Error('geometry dispose failed');
+    const [firstMaterial, ...remainingMaterials] = [...materials];
+    const firstDispose = vi.spyOn(firstMaterial, 'dispose').mockImplementation(() => {
+      throw new Error('material dispose failed');
     });
-    const remainingGeometryDisposals = remainingGeometries
-      .map((geometry) => vi.spyOn(geometry, 'dispose'));
-    const materialDisposals = [...materials]
+    const materialDisposals = remainingMaterials
       .map((material) => vi.spyOn(material, 'dispose'));
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
@@ -330,11 +256,10 @@ describe('traffic vehicle visual', () => {
     disposeTrafficVehicleVisual(visual);
 
     expect(firstDispose).toHaveBeenCalledOnce();
-    remainingGeometryDisposals.forEach((dispose) => expect(dispose).toHaveBeenCalledOnce());
     materialDisposals.forEach((dispose) => expect(dispose).toHaveBeenCalledOnce());
     expect(consoleError).toHaveBeenCalledWith(
-      'Failed to dispose traffic visual geometry:',
-      expect.objectContaining({ message: 'geometry dispose failed' }),
+      'Failed to dispose traffic visual material:',
+      expect.objectContaining({ message: 'material dispose failed' }),
     );
     consoleError.mockRestore();
   });

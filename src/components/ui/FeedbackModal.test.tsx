@@ -18,6 +18,7 @@ const renderFeedback = (revealResult: boolean) => renderToStaticMarkup(
     deductions={[deduction]}
     failReason="차선 변경 절차 미준수"
     onRetry={() => undefined}
+    onSelectMission={() => undefined}
     onNextMission={() => undefined}
     nextLabel="다음 평가"
     isScored
@@ -45,6 +46,7 @@ describe('FeedbackModal result disclosure', () => {
     expect(html).toContain('방향지시등을 켜지 않았습니다.');
     expect(html).toContain('차선 변경 절차 미준수');
     expect(html).toContain('다시 연습하기');
+    expect(html).toContain('미션 선택');
   });
 
   it('점수가 70점 이상이어도 유효 통과 여부가 false면 불합격으로 표시한다', () => {
@@ -55,11 +57,30 @@ describe('FeedbackModal result disclosure', () => {
         deductions={[deduction]}
         passed={false}
         onRetry={() => undefined}
+        onSelectMission={() => undefined}
         onNextMission={() => undefined}
       />
     );
 
     expect(html).toContain('안전 기준 미충족 (불합격)');
     expect(html).not.toContain('미션 완주 합격');
+    expect(html).toContain('미션 선택');
+  });
+
+  it('합격 결과에는 실패 복구용 미션 선택 동작을 표시하지 않는다', () => {
+    const html = renderToStaticMarkup(
+      <FeedbackModal
+        mission={mission}
+        score={90}
+        deductions={[]}
+        passed
+        onRetry={() => undefined}
+        onSelectMission={() => undefined}
+        onNextMission={() => undefined}
+      />
+    );
+
+    expect(html).not.toContain('미션 선택');
+    expect(html).toContain('다시 연습하기');
   });
 });

@@ -16,7 +16,7 @@ export const getRearDirection = (heading: number, vertical = 0): THREE.Vector3 =
 export const getHoodCameraOffset = (vehicle: VehicleConfig, vibration = 0): THREE.Vector3 => new THREE.Vector3(
   0,
   vehicle.height * 0.8 + vibration,
-  -vehicle.length * 0.35
+  -vehicle.length * 0.52
 );
 
 export const getBackupCameraOffset = (vehicle: VehicleConfig): THREE.Vector3 => new THREE.Vector3(
@@ -29,7 +29,7 @@ export const getOrbitVehicleHeading = (angle: number, direction: 1 | -1): number
   -angle + (direction === 1 ? Math.PI : 0)
 );
 
-export const getVisualWheelSteerRotation = (steerAngle: number): number => steerAngle;
+export const getVisualWheelSteerRotation = (steerAngle: number): number => -steerAngle;
 
 export type MirrorView = 'left' | 'right' | 'rear';
 
