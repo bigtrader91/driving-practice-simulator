@@ -1,3 +1,5 @@
+import { AttemptAssessment, isAttemptPassed, MajorFailure } from './AttemptAssessment';
+
 export type TrainingPhase = 'adaptation' | 'baseline' | 'guided' | 'post-assessment';
 export type TrainingDirection = 'free' | 'left' | 'right';
 export type TrainingLifecycle = 'welcome' | 'active' | 'post-briefing' | 'results';
@@ -13,6 +15,8 @@ export interface TrainingAttempt {
 export interface TrainingAttemptResult extends TrainingAttempt {
   score: number | null;
   passed: boolean | null;
+  feedback: string[];
+  majorFailures: MajorFailure[];
 }
 
 export interface TrainingSession {
@@ -69,15 +73,25 @@ export function beginPostAssessment(session: TrainingSession): TrainingSession {
 
 export function completeTrainingAttempt(
   session: TrainingSession,
-  result: Pick<TrainingAttemptResult, 'score' | 'passed'>
+  result: { score: number; passed: boolean; assessment?: AttemptAssessment }
 ): TrainingSession {
   if (session.lifecycle !== 'active' || !session.currentAttempt) {
     throw new Error('진행 중인 훈련 시도가 없습니다.');
   }
 
-  const recordedResult = session.currentAttempt.scored
-    ? result
-    : { score: null, passed: null };
+  const assessment = result.assessment ?? {
+    majorFailures: [],
+    procedureOmissions: [],
+    feedback: [],
+  };
+  const recordedResult = {
+    score: session.currentAttempt.scored ? result.score : null,
+    passed: session.currentAttempt.scored
+      ? isAttemptPassed(result.passed, assessment)
+      : null,
+    feedback: assessment.feedback,
+    majorFailures: assessment.majorFailures,
+  };
   const results = [...session.results, { ...session.currentAttempt, ...recordedResult }];
   const attempts = session.currentAttempt.phase === 'post-assessment' ? POST_ATTEMPTS : PRE_POST_ATTEMPTS;
   const currentIndex = attempts.findIndex((attempt) => attempt.id === session.currentAttempt?.id);

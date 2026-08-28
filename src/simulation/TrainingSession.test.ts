@@ -8,6 +8,7 @@ import {
   shouldRevealAttemptResult,
   startTrainingSession,
 } from './TrainingSession';
+import { assessAttemptEvents } from './AttemptAssessment';
 
 describe('TrainingSession', () => {
   it('설치 없는 한 세션에서 적응, 사전 좌우, 안내 좌우 순서로 진행한다', () => {
@@ -75,5 +76,31 @@ describe('TrainingSession', () => {
       expect(shouldRevealAttemptResult(session.currentAttempt)).toBe(index === 4);
       session = completeTrainingAttempt(session, { score: 90, passed: true });
     }
+  });
+
+  it('절차 누락은 현재 시도만 실패시키고 피드백을 남긴 뒤 다음 훈련을 계속한다', () => {
+    const assessment = assessAttemptEvents([
+      {
+        type: 'procedure-omission',
+        code: 'signal',
+        message: '방향지시등 확인이 누락됐습니다.',
+      },
+    ]);
+    let session = startTrainingSession(createTrainingSession());
+    session = completeTrainingAttempt(session, { score: 100, passed: true });
+
+    session = completeTrainingAttempt(session, {
+      score: 85,
+      passed: true,
+      assessment,
+    });
+
+    expect(session.results[1]).toMatchObject({
+      passed: false,
+      feedback: ['방향지시등 확인이 누락됐습니다.'],
+      majorFailures: [],
+    });
+    expect(session.lifecycle).toBe('active');
+    expect(session.currentAttempt?.id).toBe('baseline-right');
   });
 });

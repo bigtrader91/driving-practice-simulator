@@ -35,6 +35,12 @@ import {
   startTrainingSession,
 } from './simulation/TrainingSession';
 import { missionForTrainingAttempt } from './simulation/TrainingMission';
+import {
+  assessMissionResult,
+  AttemptAssessment,
+  AttemptEvent,
+  isAttemptPassed,
+} from './simulation/AttemptAssessment';
 
 const LANE_CHANGE_MISSION = MISSIONS.find((mission) => mission.id === 'city_lane_change') ?? MISSIONS[0];
 
@@ -56,7 +62,11 @@ export const App: React.FC = () => {
   const [lastDeductions, setLastDeductions] = useState<ScoreDeduction[]>([]);
   const [failReason, setFailReason] = useState<string | null>(null);
   const [trainingSession, setTrainingSession] = useState(createTrainingSession);
-  const [pendingAttemptResult, setPendingAttemptResult] = useState<{ score: number; passed: boolean } | null>(null);
+  const [pendingAttemptResult, setPendingAttemptResult] = useState<{
+    score: number;
+    passed: boolean;
+    assessment: AttemptAssessment;
+  } | null>(null);
   const trainingAttemptActive = isTrainingAttemptActive(trainingSession);
   const showTrainingGuidance = hasActiveGuidance(trainingSession);
 
@@ -328,18 +338,32 @@ export const App: React.FC = () => {
     }, 2800);
   }, []);
 
-  const handleMissionComplete = useCallback((score: number, deductions: ScoreDeduction[]) => {
+  const handleMissionComplete = useCallback((
+    score: number,
+    deductions: ScoreDeduction[],
+    events: AttemptEvent[],
+  ) => {
+    const assessment = assessMissionResult(events);
     setLastCompletedScore(score);
     setLastDeductions(deductions);
-    setPendingAttemptResult({ score, passed: score >= 70 });
+    setPendingAttemptResult({
+      score,
+      passed: isAttemptPassed(score >= 70, assessment),
+      assessment,
+    });
     setShowFeedbackModal(true);
   }, []);
 
-  const handleMissionFail = useCallback((reason: string, score: number, deductions: ScoreDeduction[]) => {
+  const handleMissionFail = useCallback((
+    reason: string,
+    score: number,
+    deductions: ScoreDeduction[],
+    events: AttemptEvent[],
+  ) => {
     setLastCompletedScore(score);
     setLastDeductions(deductions);
     setFailReason(reason);
-    setPendingAttemptResult({ score, passed: false });
+    setPendingAttemptResult({ score, passed: false, assessment: assessMissionResult(events) });
     setShowFeedbackModal(true);
   }, []);
 
@@ -481,6 +505,7 @@ export const App: React.FC = () => {
           mission={currentMission}
           score={lastCompletedScore}
           deductions={lastDeductions}
+          passed={pendingAttemptResult?.passed}
           failReason={failReason ?? undefined}
           onRetry={() => {
             setPendingAttemptResult(null);

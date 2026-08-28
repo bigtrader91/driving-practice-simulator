@@ -456,6 +456,8 @@ const makeComponentProps = () => ({
   cameraMode: 'cockpit' as const,
   showTrajectory: false,
   showWidthGuide: false,
+  guidanceEnabled: false,
+  resultFeedbackEnabled: false,
   inputsRef: { current: makeInputs() },
   onStateUpdate: vi.fn(),
   onMissionComplete: vi.fn(),
@@ -673,12 +675,13 @@ describe('SimulationCanvas component integration', () => {
       createTrafficSedan: vi.fn(() => makeBoundAsset()),
     });
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const props = { ...makeComponentProps(), guidanceEnabled: true };
 
-    renderComponent();
+    renderComponent(props);
     hookHarness.flushEffects();
     await Promise.resolve();
     await Promise.resolve();
-    renderComponent();
+    renderComponent(props);
     hookHarness.flushEffects();
     runtimeMocks.disposeVisual.mockImplementationOnce(() => {
       throw new Error('visual cleanup failed');

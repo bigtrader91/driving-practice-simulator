@@ -7,6 +7,7 @@ interface FeedbackModalProps {
   mission: Mission;
   score: number;
   deductions: ScoreDeduction[];
+  passed?: boolean;
   failReason?: string;
   onRetry: () => void;
   onNextMission: () => void;
@@ -19,6 +20,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
   mission,
   score,
   deductions,
+  passed,
   failReason,
   onRetry,
   onNextMission,
@@ -27,7 +29,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
   revealResult = true,
 }) => {
   const isFailed = Boolean(failReason);
-  const isPassed = !isScored || (score >= 70 && !isFailed);
+  const isPassed = !isScored || (passed ?? (score >= 70 && !isFailed));
 
   useEffect(() => {
     if (revealResult && isScored && isPassed) {
@@ -64,7 +66,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
                   ? '🚫 미션 실패'
                   : isPassed
                     ? '🎉 미션 완주 합격!'
-                    : '⚠️ 기준 점수 미달 (불합격)'}
+                    : '⚠️ 안전 기준 미충족 (불합격)'}
           </h2>
           {revealResult && <p className="text-xs text-slate-400 mt-1">{mission.title}</p>}
           {revealResult && isFailed && (

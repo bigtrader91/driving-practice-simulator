@@ -24,6 +24,12 @@ import { updateKeyboardSteeringRatio } from '../../simulation/SteeringInput';
 import { advanceVehiclePose, updateLongitudinalMotion } from '../../simulation/VehicleMotion';
 import { resetIfOutsideWorldBounds } from '../../simulation/WorldBounds';
 import { playAttemptResultSound, playInstructionalWarning } from '../../simulation/TrainingGuidanceAudio';
+import {
+  assessMissionResult,
+  AttemptEvent,
+  isAttemptPassed,
+  recordAttemptEvent,
+} from '../../simulation/AttemptAssessment';
 import { sounds } from '../../audio/soundEffects';
 import {
   getBackupCameraOffset,
@@ -140,8 +146,8 @@ interface SimulationCanvasProps {
   resultFeedbackEnabled: boolean;
   inputsRef: React.MutableRefObject<ControlInputs>;
   onStateUpdate: (state: CarState, sensors: ProximitySensorData, trafficData?: TrafficVehicleData[]) => void;
-  onMissionComplete: (score: number, deductions: ScoreDeduction[]) => void;
-  onMissionFail: (reason: string, score: number, deductions: ScoreDeduction[]) => void;
+  onMissionComplete: (score: number, deductions: ScoreDeduction[], events: AttemptEvent[]) => void;
+  onMissionFail: (reason: string, score: number, deductions: ScoreDeduction[], events: AttemptEvent[]) => void;
   onPenalty: (deduction: ScoreDeduction) => void;
   onReset: () => void;
   leftMirrorCanvasRef?: React.RefObject<HTMLCanvasElement | null>;
@@ -259,6 +265,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
 
     // 3. Track Scene & Traffic
     const { trackGroup, obstacles, initialTraffic, signals } = buildTrackScene(mission);
+    const attemptEvents: AttemptEvent[] = [];
     scene.add(trackGroup);
 
     const lightController = mission.id === 'city_traffic' ? new TrafficLightController() : null;
@@ -617,6 +624,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
             sounds.playCollision();
             carState.speedMs = -carState.speedMs * 0.3;
             triggerPenalty(`[충돌] ${obs.name} 충돌 감점`, 15);
+            recordAttemptEvent(attemptEvents, { type: 'collision' });
           }
         }
       });
@@ -634,6 +642,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
             sounds.playCollision();
             carState.speedMs = -carState.speedMs * 0.4;
             triggerPenalty(`[차량 충돌] ${tv.behavior === 'aggressive' ? '가속 추월 차량' : '주행 차량'}과 충돌`, 30);
+            recordAttemptEvent(attemptEvents, { type: 'collision' });
           }
         }
       });
@@ -675,13 +684,14 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
         lights: lightController,
       });
       evalResult.penalties.forEach(applyPenalty);
+      evalResult.attemptEvents.forEach((event) => recordAttemptEvent(attemptEvents, event));
 
       if (evalResult.failReason) {
         const failure = runState.finishFailure(evalResult.failReason);
         if (!failure) return;
         playAttemptResultSound(resultFeedbackEnabled, 'failure', sounds);
         if (guidanceEnabled) sounds.speakInstructor(`미션 실패! ${evalResult.failReason}`);
-        onMissionFail(failure.reason, failure.score, failure.deductions);
+        onMissionFail(failure.reason, failure.score, failure.deductions, [...attemptEvents]);
       }
 
       // 신호등 램프 렌더링
@@ -713,17 +723,33 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
                 if (parkingHoldTimer >= 1.5) {
                   const result = runState.finishSuccess();
                   if (!result) return;
-                  playAttemptResultSound(resultFeedbackEnabled, 'success', sounds);
-                  if (guidanceEnabled) sounds.speakInstructor('축하합니다! 완벽하게 주차를 완료했습니다.');
-                  onMissionComplete(result.score, result.deductions);
+                  const passed = isAttemptPassed(
+                    result.score >= 70,
+                    assessMissionResult(attemptEvents),
+                  );
+                  playAttemptResultSound(resultFeedbackEnabled, passed ? 'success' : 'failure', sounds);
+                  if (guidanceEnabled) {
+                    sounds.speakInstructor(
+                      passed ? '축하합니다! 완벽하게 주차를 완료했습니다.' : '안전 기준을 충족하지 못했습니다. 결과를 확인하세요.',
+                    );
+                  }
+                  onMissionComplete(result.score, result.deductions, [...attemptEvents]);
                 }
               }
             } else {
               const result = runState.finishSuccess();
               if (!result) return;
-              playAttemptResultSound(resultFeedbackEnabled, 'success', sounds);
-              if (guidanceEnabled) sounds.speakInstructor('축하합니다! 미션을 성공적으로 완주했습니다.');
-              onMissionComplete(result.score, result.deductions);
+              const passed = isAttemptPassed(
+                result.score >= 70,
+                assessMissionResult(attemptEvents),
+              );
+              playAttemptResultSound(resultFeedbackEnabled, passed ? 'success' : 'failure', sounds);
+              if (guidanceEnabled) {
+                sounds.speakInstructor(
+                  passed ? '축하합니다! 미션을 성공적으로 완주했습니다.' : '안전 기준을 충족하지 못했습니다. 결과를 확인하세요.',
+                );
+              }
+              onMissionComplete(result.score, result.deductions, [...attemptEvents]);
             }
           }
         } else {

@@ -46,4 +46,20 @@ describe('FeedbackModal result disclosure', () => {
     expect(html).toContain('차선 변경 절차 미준수');
     expect(html).toContain('다시 연습하기');
   });
+
+  it('점수가 70점 이상이어도 유효 통과 여부가 false면 불합격으로 표시한다', () => {
+    const html = renderToStaticMarkup(
+      <FeedbackModal
+        mission={mission}
+        score={90}
+        deductions={[deduction]}
+        passed={false}
+        onRetry={() => undefined}
+        onNextMission={() => undefined}
+      />
+    );
+
+    expect(html).toContain('안전 기준 미충족 (불합격)');
+    expect(html).not.toContain('미션 완주 합격');
+  });
 });

@@ -115,7 +115,8 @@ export const ControlHelp: React.FC<ControlHelpProps> = ({ onClose }) => (
                 <div><kbd className="bg-slate-800 px-1.5 py-0.5 rounded font-mono">W / ↑</kbd> 가속 (엑셀)</div>
                 <div><kbd className="bg-slate-800 px-1.5 py-0.5 rounded font-mono">S / ↓</kbd> 감속 / 브레이크</div>
                 <div><kbd className="bg-slate-800 px-1.5 py-0.5 rounded font-mono">← / →</kbd> 핸들 좌/우 조향</div>
-                <div><kbd className="bg-slate-800 px-1.5 py-0.5 rounded font-mono">Space</kbd> 비상등</div>
+                <div><kbd className="bg-slate-800 px-1.5 py-0.5 rounded font-mono">마우스 이동</kbd> 핸들 좌/우 조향</div>
+                <div><kbd className="bg-slate-800 px-1.5 py-0.5 rounded font-mono">Space / Z</kbd> 비상등</div>
               </div>
 
               <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 space-y-1">
