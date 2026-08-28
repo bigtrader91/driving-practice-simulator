@@ -148,12 +148,11 @@ export const App: React.FC = () => {
   const [simKey, setSimKey] = useState(0);
 
   const handleResetCar = useCallback(() => {
+    releaseTransientInputs(inputsRef.current, true);
     setCurrentScore(100);
     setRecentPenalty(null);
     setShowFeedbackModal(false);
     setFailReason(null);
-    inputsRef.current.mouseSteerRatio = 0;
-    inputsRef.current.isMouseSteeringActive = true;
     setSimKey((prev) => prev + 1);
   }, []);
 
@@ -481,6 +480,7 @@ export const App: React.FC = () => {
       <MobileControls
         inputsRef={inputsRef}
         currentGear={carState.gear}
+        currentTurnSignal={carState.turnSignal}
         onGearChange={handleGearChange}
       />
 

@@ -66,4 +66,30 @@ describe('input safety', () => {
     });
     expect(inputs.mouseSteerRatio).toBe(0.5);
   });
+
+  it.each(['lookLeft', 'lookRear', 'lookRight'] as const)(
+    '모바일 %s 미러 확인은 누르는 동안만 활성화한다',
+    (control) => {
+      const inputs = createInputs();
+      inputs[control] = false;
+
+      setMobileControl(inputs, control, true);
+      expect(inputs[control]).toBe(true);
+
+      setMobileControl(inputs, control, false);
+      expect(inputs[control]).toBe(false);
+    },
+  );
+
+  it('차량 재시작은 hold 입력과 포인터 조향 상태를 함께 초기화한다', () => {
+    const inputs = createInputs();
+    inputs.isMouseSteeringActive = false;
+
+    releaseTransientInputs(inputs, true);
+
+    expect(inputs.forward).toBe(false);
+    expect(inputs.lookLeft).toBe(false);
+    expect(inputs.mouseSteerRatio).toBe(0);
+    expect(inputs.isMouseSteeringActive).toBe(true);
+  });
 });
