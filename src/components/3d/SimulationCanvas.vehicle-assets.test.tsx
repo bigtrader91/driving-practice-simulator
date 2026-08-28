@@ -169,6 +169,7 @@ const soundMocks = vi.hoisted(() => ({
 vi.mock('../../audio/soundEffects', () => ({ sounds: soundMocks }));
 
 const makeLibrary = (): VehicleAssetLibrary => ({
+  createVehicle: vi.fn(),
   createTrafficSedan: vi.fn(),
 });
 
@@ -283,7 +284,7 @@ describe('simulation canvas vehicle asset lifecycle', () => {
 
     expect(markup).toContain('role="status"');
     expect(markup).toContain('aria-live="polite"');
-    expect(markup).toContain('교통 차량 모델을 불러오는 중');
+    expect(markup).toContain('차량 모델을 불러오는 중');
   });
 
   it('attempts every registered cleanup in reverse order and is terminally idempotent', () => {
@@ -527,7 +528,10 @@ describe('SimulationCanvas component integration', () => {
     runtimeMocks.loadLibrary.mockReturnValue(new Promise((resolve) => {
       resolveLibrary = resolve;
     }));
-    const library = { createTrafficSedan: vi.fn(() => makeBoundAsset()) };
+    const library = {
+      createVehicle: vi.fn(() => makeBoundAsset()),
+      createTrafficSedan: vi.fn(() => makeBoundAsset()),
+    };
 
     const loading = renderComponent();
     expect(renderToStaticMarkup(loading)).toContain('role="status"');
@@ -546,11 +550,11 @@ describe('SimulationCanvas component integration', () => {
 
     expect(runtimeMocks.buildTrack).toHaveBeenCalledOnce();
     expect(runtimeMocks.createVisual).toHaveBeenCalledTimes(4);
-    expect(library.createTrafficSedan).toHaveBeenCalledTimes(2);
+    expect(library.createVehicle).toHaveBeenCalledTimes(5);
     expect(runtimeMocks.createVisual.mock.results.map(({ value }) => value.group.name)).toEqual([
       'LOADED_TRAFFIC_COMPACT',
-      'PROCEDURAL_TRAFFIC_SUV',
-      'PROCEDURAL_TRAFFIC_TRUCK',
+      'LOADED_TRAFFIC_COMPACT',
+      'LOADED_TRAFFIC_COMPACT',
       'LOADED_TRAFFIC_COMPACT',
     ]);
 
@@ -626,6 +630,7 @@ describe('SimulationCanvas component integration', () => {
 
   it('rolls back the first visual and every renderer when the second visual throws', async () => {
     runtimeMocks.loadLibrary.mockResolvedValue({
+      createVehicle: vi.fn(() => makeBoundAsset()),
       createTrafficSedan: vi.fn(() => makeBoundAsset()),
     });
     const firstVisual = {
@@ -672,6 +677,7 @@ describe('SimulationCanvas component integration', () => {
 
   it('attempts every visual and renderer cleanup and clears the instructor timeout after a dispose failure', async () => {
     runtimeMocks.loadLibrary.mockResolvedValue({
+      createVehicle: vi.fn(() => makeBoundAsset()),
       createTrafficSedan: vi.fn(() => makeBoundAsset()),
     });
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);

@@ -17,7 +17,7 @@ describe('buildTrackScene city_traffic signals', () => {
     const mission = MISSIONS.find(({ id }) => id === 'city_traffic');
     expect(mission).toBeDefined();
 
-    const { trackGroup, signals } = buildTrackScene(mission!);
+    const { trackGroup, signals } = buildTrackScene(mission!, () => new THREE.Group());
 
     expect(signals.map(({ axis }) => axis).sort()).toEqual(['EW', 'EW', 'NS', 'NS']);
     expect(new Set(signals.map(({ lamps }) => lamps.red)).size).toBe(4);
@@ -51,6 +51,36 @@ describe('buildTrackScene city_traffic signals', () => {
       { axis: 'NS', x: -13, z: 21.5, facingX: 0, facingZ: -1 },
       { axis: 'EW', x: -13, z: 38.5, facingX: -1, facingZ: 0 },
       { axis: 'EW', x: 13, z: 21.5, facingX: 1, facingZ: 0 },
+    ]);
+  });
+});
+
+describe('buildTrackScene parked vehicles', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('uses the supplied GLB clone factory while preserving literal collision boxes', () => {
+    vi.spyOn(THREE.TextureLoader.prototype, 'load').mockReturnValue(new THREE.Texture());
+    const createParkedVehicle = vi.fn((color: number) => {
+      const group = new THREE.Group();
+      group.name = `LOADED_PARKED_${color.toString(16)}`;
+      return group;
+    });
+    const mission = MISSIONS.find(({ id }) => id === 'parking_reverse');
+    expect(mission).toBeDefined();
+
+    const { trackGroup, obstacles } = buildTrackScene(mission!, createParkedVehicle);
+
+    expect(createParkedVehicle.mock.calls.map(([color]) => color)).toEqual([0xdc2626, 0x475569]);
+    const parked = trackGroup.children.filter(({ name }) => name.startsWith('LOADED_PARKED_'));
+    expect(parked.map(({ position, rotation }) => [position.x, position.z, rotation.y])).toEqual([
+      [-3.2, -12, Math.PI],
+      [3.2, -12, Math.PI],
+    ]);
+    expect(obstacles.filter(({ name }) => name.includes('주차 차량'))).toMatchObject([
+      { x: -3.2, z: -12, width: 1.9, depth: 4.7 },
+      { x: 3.2, z: -12, width: 1.9, depth: 4.7 },
     ]);
   });
 });

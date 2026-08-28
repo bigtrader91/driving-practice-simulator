@@ -69,11 +69,11 @@ const initializeVisual = (
   return visual;
 };
 
-const createSedanVisual = (
+const createLoadedVisual = (
   data: TrafficVehicleData,
   assets: VehicleAssetLibrary,
 ): TrafficVehicleVisual => {
-  const asset = assets.createTrafficSedan(data.color);
+  const asset = assets.createVehicle(data.type, data.color);
   const visual: TrafficVehicleVisual = {
     group: asset.group,
     headlights: asset.headlights,
@@ -92,88 +92,10 @@ const createSedanVisual = (
   });
 };
 
-const createProceduralVisual = (data: TrafficVehicleData): TrafficVehicleVisual => {
-  const group = new THREE.Group();
-  group.name = `PROCEDURAL_TRAFFIC_${data.type.toUpperCase()}`;
-  const isTruck = data.type === 'truck';
-  const width = isTruck ? 2.3 : 2.0;
-  const length = isTruck ? 7.5 : 4.9;
-  const height = isTruck ? 2.8 : 1.7;
-  const geometries = new Set<THREE.BufferGeometry>();
-  const materials = new Set<THREE.Material>();
-
-  const bodyMaterial = new THREE.MeshStandardMaterial({
-    color: data.color,
-    roughness: 0.22,
-    metalness: 0.7,
-  });
-  materials.add(bodyMaterial);
-
-  const bodyGeometry = new THREE.BoxGeometry(width, height * 0.45, length);
-  const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
-  body.position.y = height * 0.225 + 0.25;
-  body.castShadow = true;
-  geometries.add(bodyGeometry);
-  group.add(body);
-
-  const cabinGeometry = new THREE.BoxGeometry(width * 0.9, height * 0.45, length * 0.5);
-  const cabin = new THREE.Mesh(cabinGeometry, bodyMaterial);
-  cabin.position.set(0, height * 0.65 + 0.25, length * 0.05);
-  cabin.castShadow = true;
-  geometries.add(cabinGeometry);
-  group.add(cabin);
-
-  const headlightMaterial = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    emissive: 0xffffff,
-    emissiveIntensity: 1.0,
-  });
-  const brakeMaterial = new THREE.MeshStandardMaterial({
-    color: 0xff0000,
-    emissive: 0xaa0000,
-    emissiveIntensity: 0.4,
-  });
-  materials.add(headlightMaterial);
-  materials.add(brakeMaterial);
-
-  const makeLights = (
-    material: THREE.MeshStandardMaterial,
-    z: number,
-  ): THREE.Mesh[] => [-1, 1].map((side) => {
-    const geometry = new THREE.BoxGeometry(0.25, 0.12, 0.05);
-    const light = new THREE.Mesh(geometry, material);
-    light.position.set(side * width * 0.35, height * 0.3 + 0.25, z);
-    geometries.add(geometry);
-    group.add(light);
-    return light;
-  });
-  const headlights = makeLights(headlightMaterial, -length / 2 - 0.02);
-  const brakeLights = makeLights(brakeMaterial, length / 2 + 0.02);
-
-  const wheels = ['FL', 'FR', 'RL', 'RR'].map((suffix) => {
-    const wheel = new THREE.Group();
-    wheel.name = `WHEEL_${suffix}`;
-    group.add(wheel);
-    return wheel;
-  });
-
-  return initializeVisual({
-    group,
-    headlights,
-    brakeLights,
-    wheels,
-    lastPosition: new THREE.Vector2(),
-  }, data, { geometries, materials });
-};
-
 export const createTrafficVehicleVisual = (
   data: TrafficVehicleData,
   assets: VehicleAssetLibrary,
-): TrafficVehicleVisual => (
-  data.type === 'sedan'
-    ? createSedanVisual(data, assets)
-    : createProceduralVisual(data)
-);
+): TrafficVehicleVisual => createLoadedVisual(data, assets);
 
 const setEmissiveIntensity = (meshes: THREE.Mesh[], intensity: number) => {
   meshes.forEach((mesh) => {

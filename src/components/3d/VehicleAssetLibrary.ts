@@ -5,11 +5,15 @@ import {
   cloneVehicleAsset,
   type BoundVehicleAsset,
 } from './VehicleAssetContract';
+import type { VehicleType } from '../../types/simulator';
 
-const trafficSedanPath = 'models/vehicles/traffic-compact.glb';
+export type RuntimeVehicleKind = VehicleType | 'truck';
+
+const vehicleKinds = ['compact', 'sedan', 'suv', 'truck'] as const satisfies readonly RuntimeVehicleKind[];
 const libraryPromises = new Map<string, Promise<VehicleAssetLibrary>>();
 
 export interface VehicleAssetLibrary {
+  createVehicle(kind: RuntimeVehicleKind, color: THREE.ColorRepresentation): BoundVehicleAsset;
   createTrafficSedan(color: THREE.ColorRepresentation): BoundVehicleAsset;
 }
 
@@ -34,21 +38,31 @@ export const loadVehicleAssetLibrary = (
   const cached = libraryPromises.get(normalizedBaseUrl);
   if (cached) return cached;
 
-  const url = `${normalizedBaseUrl}${trafficSedanPath}`;
-  const promise = Promise.resolve()
-    .then(() => loadScene(url))
-    .then((scene) => {
-      bindVehicleAsset(scene, 'traffic-compact');
-      return {
-        createTrafficSedan: (color: THREE.ColorRepresentation) => (
-          cloneVehicleAsset(scene, 'traffic-compact', color)
-        ),
-      };
-    })
-    .catch((error: unknown) => {
+  const loadTemplate = async (kind: RuntimeVehicleKind) => {
+    const url = `${normalizedBaseUrl}models/vehicles/${kind}.glb`;
+    try {
+      const scene = await loadScene(url);
+      bindVehicleAsset(scene, kind);
+      return [kind, scene] as const;
+    } catch (error: unknown) {
       const wrapped = new Error(`Failed to load vehicle asset ${url}: ${errorMessage(error)}`);
       (wrapped as Error & { cause: unknown }).cause = error;
       throw wrapped;
+    }
+  };
+
+  const promise = Promise.resolve()
+    .then(() => Promise.all(vehicleKinds.map(loadTemplate)))
+    .then((entries) => {
+      const templates = new Map<RuntimeVehicleKind, THREE.Group>(entries);
+      const createVehicle = (
+        kind: RuntimeVehicleKind,
+        color: THREE.ColorRepresentation,
+      ) => cloneVehicleAsset(templates.get(kind)!, kind, color);
+      return {
+        createVehicle,
+        createTrafficSedan: (color: THREE.ColorRepresentation) => createVehicle('sedan', color),
+      };
     });
 
   libraryPromises.set(normalizedBaseUrl, promise);

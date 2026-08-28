@@ -382,6 +382,15 @@ export const App: React.FC = () => {
     }
   }, [handleResetCar, pendingAttemptResult, trainingSession]);
 
+  const handleSelectMissionAfterFailure = useCallback(() => {
+    setPendingAttemptResult(null);
+    setLastCompletedScore(100);
+    setLastDeductions([]);
+    setFailReason(null);
+    setShowFeedbackModal(false);
+    setShowMissionModal(true);
+  }, []);
+
   return (
     <div className="w-screen h-screen relative bg-slate-950 overflow-hidden select-none">
       {/* 3D Simulation Canvas */}
@@ -511,6 +520,7 @@ export const App: React.FC = () => {
             setPendingAttemptResult(null);
             handleResetCar();
           }}
+          onSelectMission={handleSelectMissionAfterFailure}
           onNextMission={handleNextTrainingAttempt}
           nextLabel={
             trainingSession.currentAttempt?.id === 'guided-right'
