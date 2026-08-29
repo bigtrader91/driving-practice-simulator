@@ -178,7 +178,33 @@ cd "$RELEASE_WORKTREE"
 npx wrangler pages project create driving-practice-simulator --production-branch main
 ```
 
-Expected when absent: project creation succeeds once. If preflight proved the compatible project already exists, skip this command and record the skip visibly. In either case, immediately GET the project through the Pages API, assert `result.name` and `result.production_branch`, then persist the returned `result.subdomain` to `/tmp/dps-pages-subdomain.txt`; do not derive it from the requested project name.
+Expected when absent: project creation succeeds once. If preflight proved the compatible project already exists, skip this command and record the skip visibly. In either case, read back the project and persist its API-returned subdomain:
+
+```bash
+ACCOUNT_ID=2afd6a64c43c506cb297aabcd6c246b7
+PROJECT_NAME=driving-practice-simulator
+PAGES_TOKEN=$(python3 -c 'import pathlib,re; text=pathlib.Path("/home/bigtrader91/.config/.wrangler/config/default.toml").read_text(); match=re.search(r"oauth_token = \"([^\"]+)\"", text); assert match; print(match.group(1))')
+curl -fsS \
+  "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/pages/projects/$PROJECT_NAME" \
+  -H "Authorization: Bearer $PAGES_TOKEN" -o /tmp/dps-pages-project-final.json
+unset PAGES_TOKEN
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+project = json.loads(Path('/tmp/dps-pages-project-final.json').read_text())
+assert project['success'], project.get('errors')
+result = project['result']
+assert result['name'] == 'driving-practice-simulator', result
+assert result['production_branch'] == 'main', result
+subdomain = result['subdomain']
+assert subdomain.endswith('.pages.dev'), subdomain
+Path('/tmp/dps-pages-subdomain.txt').write_text(subdomain + '\n')
+print({'name': result['name'], 'subdomain': subdomain})
+PY
+```
+
+Expected: the project name and production branch are exact, and `/tmp/dps-pages-subdomain.txt` contains the returned `.pages.dev` hostname. Do not derive it from the requested project name.
 
 - [ ] **Step 2: Deploy the verified artifact once**
 
@@ -442,6 +468,7 @@ Expected: custom hostname is `200 0`, release HEAD equals live `origin/main`, re
 
 ```bash
 rm -f /tmp/dps-pages-project-preflight.json \
+  /tmp/dps-pages-project-final.json \
   /tmp/dps-pages-domain-preflight.json \
   /tmp/dps-pages-deployments-before.json \
   /tmp/dps-pages-domain-attach.json
