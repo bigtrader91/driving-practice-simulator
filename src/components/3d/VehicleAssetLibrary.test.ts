@@ -76,11 +76,13 @@ describe('vehicle asset library', () => {
       '/family/models/vehicles/sedan.glb',
       '/family/models/vehicles/suv.glb',
       '/family/models/vehicles/truck.glb',
+      '/family/models/vehicles/traffic-compact.glb',
     ]);
     expect(library.createVehicle('compact', 0x2563eb).group).toBeInstanceOf(THREE.Group);
     expect(library.createVehicle('sedan', 0xdc2626).group).toBeInstanceOf(THREE.Group);
     expect(library.createVehicle('suv', 0x059669).group).toBeInstanceOf(THREE.Group);
     expect(library.createVehicle('truck', 0xd97706).group).toBeInstanceOf(THREE.Group);
+    expect(library.createTrafficSedan(0x2563eb).steeringWheelMesh).toBeUndefined();
   });
 
   it('parses the real traffic sedan with the runtime node and orientation contract', async () => {
@@ -159,6 +161,7 @@ describe('vehicle asset library', () => {
       '/game/models/vehicles/sedan.glb',
       '/game/models/vehicles/suv.glb',
       '/game/models/vehicles/truck.glb',
+      '/game/models/vehicles/traffic-compact.glb',
     ]);
     await expect(first).resolves.toBe(await second);
   });
@@ -184,7 +187,7 @@ describe('vehicle asset library', () => {
     await expect(second).rejects.toThrow(
       'Failed to load vehicle asset /missing/models/vehicles/compact.glb: 404',
     );
-    expect(loadScene).toHaveBeenCalledTimes(4);
+    expect(loadScene).toHaveBeenCalledTimes(5);
     expect(replacementLoader).not.toHaveBeenCalled();
   });
 

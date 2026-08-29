@@ -103,24 +103,31 @@ const materialOf = (mesh: THREE.Mesh) => mesh.material as THREE.MeshStandardMate
 
 
 describe('traffic vehicle visual', () => {
-  it('uses a loaded clone for sedan, SUV, and truck traffic without a procedural fallback', () => {
+  it('uses the dedicated traffic sedan and type-specific SUV and truck clones', () => {
     const createVehicle = vi.fn((type: 'sedan' | 'suv' | 'truck') => {
       const asset = makeAsset();
       asset.group.name = `LOADED_${type.toUpperCase()}`;
       return asset;
     });
-    const library = { createVehicle } as unknown as VehicleAssetLibrary;
+    const createTrafficSedan = vi.fn(() => {
+      const asset = makeAsset();
+      asset.group.name = 'LOADED_TRAFFIC_SEDAN';
+      return asset;
+    });
+    const library = { createVehicle, createTrafficSedan } satisfies VehicleAssetLibrary;
 
     const visuals = (['sedan', 'suv', 'truck'] as const).map((type) => (
       createTrafficVehicleVisual(makeTraffic(type), library)
     ));
 
     expect(visuals.map(({ group }) => group.name)).toEqual([
-      'LOADED_SEDAN',
+      'LOADED_TRAFFIC_SEDAN',
       'LOADED_SUV',
       'LOADED_TRUCK',
     ]);
-    expect(createVehicle.mock.calls.map(([type]) => type)).toEqual(['sedan', 'suv', 'truck']);
+    expect(createTrafficSedan).toHaveBeenCalledOnce();
+    expect(createTrafficSedan).toHaveBeenCalledWith(0x2563eb);
+    expect(createVehicle.mock.calls.map(([type]) => type)).toEqual(['suv', 'truck']);
   });
 
   it('uses existing traffic headings without a negative scale', () => {
@@ -220,10 +227,9 @@ describe('traffic vehicle visual', () => {
       .map((mesh) => vi.spyOn(materialOf(mesh), 'dispose'));
     const glass = asset.group.getObjectByName('GLASS_FRONT') as THREE.Mesh;
     const glassMaterialDispose = vi.spyOn(materialOf(glass), 'dispose');
-    const createVehicle = vi.fn(() => asset);
     const visual = createTrafficVehicleVisual(
       makeTraffic('sedan'),
-      { createVehicle, createTrafficSedan: vi.fn() },
+      { createVehicle: vi.fn(), createTrafficSedan: vi.fn(() => asset) },
     );
 
     disposeTrafficVehicleVisual(visual);
