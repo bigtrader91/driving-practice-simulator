@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Pages project: `driving-practice-simulator`; production branch: `main`.
-- Public hostname: `driving.pysyntax.com`; expected DNS target: `driving-practice-simulator.pages.dev`.
+- Public hostname: `driving.pysyntax.com`; DNS target is the exact `subdomain` returned by the Pages project API.
 - Release source must be one 40-character SHA equal to the live `origin/main` at execution time.
 - Deploy only `dist/` produced in a clean detached release worktree.
 - Direct Upload cannot later switch to Cloudflare Git integration; future automation must keep using Wrangler uploads or use an explicitly migrated project.
@@ -91,7 +91,6 @@ Expected: `dist/index.html` exists, the file inventory is visible, and the final
 
 **Files:**
 - Read only: `/home/bigtrader91/.config/.wrangler/config/default.toml`
-- Read only: `/data/coolify/applications/*/.env`
 - Temporary secret state: process-local shell variables only
 
 **Interfaces:**
@@ -136,30 +135,30 @@ python3 -m json.tool /tmp/dps-pages-deployments-before.json
 
 Expected: each response is either Cloudflare `404`/not-found or an exact compatible resource. When the project exists, record its current production deployment as the rollback candidate. If the project has a different production branch, custom-domain set, or unrelated deployment purpose, stop. Do not update it.
 
-- [ ] **Step 3: Discover a DNS-edit token without printing it and inspect only the target record**
+Record the IDs that existed before the permitted deployment, and record the actual Pages subdomain when the project already exists:
 
 ```bash
-ACCOUNT_ID=2afd6a64c43c506cb297aabcd6c246b7
-ZONE_NAME=pysyntax.com
-DNS_NAME=driving.pysyntax.com
-PAGES_TOKEN=$(python3 -c 'import pathlib,re; text=pathlib.Path("/home/bigtrader91/.config/.wrangler/config/default.toml").read_text(); match=re.search(r"oauth_token = \"([^\"]+)\"", text); assert match; print(match.group(1))')
-ZONE_ID=$(curl -sS "https://api.cloudflare.com/client/v4/zones?name=$ZONE_NAME" -H "Authorization: Bearer $PAGES_TOKEN" | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["success"] and len(data["result"]) == 1; print(data["result"][0]["id"])')
-unset PAGES_TOKEN
-DNS_TOKEN=""
-while IFS= read -r candidate; do
-  if curl -fsS "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?per_page=1" -H "Authorization: Bearer $candidate" -o /dev/null; then
-    DNS_TOKEN="$candidate"
-    break
-  fi
-done < <(grep -rhoP '(CLOUDFLARE_API_TOKEN|CLOUDFLARE_DNS_API_TOKEN|CF_API_TOKEN|CF_DNS_API_TOKEN)=\K\S+' /data/coolify/applications/*/.env 2>/dev/null | tr -d '"' | sort -u)
-test -n "$DNS_TOKEN"
-curl -sS "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?name=$DNS_NAME" \
-  -H "Authorization: Bearer $DNS_TOKEN" -o /tmp/dps-dns-preflight.json
-unset DNS_TOKEN
-python3 -m json.tool /tmp/dps-dns-preflight.json
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+deployments = json.loads(Path('/tmp/dps-pages-deployments-before.json').read_text())
+before_ids = [] if not deployments.get('success') else [item['id'] for item in deployments['result']]
+Path('/tmp/dps-pages-deployment-ids-before.txt').write_text('\n'.join(before_ids) + ('\n' if before_ids else ''))
+
+project = json.loads(Path('/tmp/dps-pages-project-preflight.json').read_text())
+if project.get('success'):
+    subdomain = project['result']['subdomain']
+    assert subdomain.endswith('.pages.dev'), subdomain
+    Path('/tmp/dps-pages-subdomain.txt').write_text(subdomain + '\n')
+PY
 ```
 
-Expected: the DNS result is empty or is exactly one proxied CNAME to `driving-practice-simulator.pages.dev`. Any other result is a stop condition.
+- [ ] **Step 3: Inspect only the exact DNS name in the authenticated Cloudflare dashboard**
+
+Open `pysyntax.com` → DNS → Records in the already authenticated Cloudflare browser session, enter `driving` in the record search box, and inspect the complete filtered row set before opening the add form. Do not discover or enumerate credentials from unrelated applications. If dashboard access is unavailable, stop and request one explicitly identified, least-privilege `pysyntax.com` DNS Edit credential through an approved secret-input mechanism; never place the credential in command arguments or logs.
+
+Expected: the result is empty or is exactly one proxied CNAME whose target equals `/tmp/dps-pages-subdomain.txt` when the Pages project already exists. Any other result is a stop condition.
 
 ### Task 3: Create or reuse the Pages project and deploy once
 
@@ -179,7 +178,7 @@ cd "$RELEASE_WORKTREE"
 npx wrangler pages project create driving-practice-simulator --production-branch main
 ```
 
-Expected when absent: project creation succeeds once and assigns `driving-practice-simulator.pages.dev`. If preflight proved the compatible project already exists, skip this command and record the skip visibly.
+Expected when absent: project creation succeeds once. If preflight proved the compatible project already exists, skip this command and record the skip visibly. In either case, immediately GET the project through the Pages API, assert `result.name` and `result.production_branch`, then persist the returned `result.subdomain` to `/tmp/dps-pages-subdomain.txt`; do not derive it from the requested project name.
 
 - [ ] **Step 2: Deploy the verified artifact once**
 
@@ -217,20 +216,29 @@ release_sha = os.environ['RELEASE_SHA']
 payload = json.loads(Path('/tmp/dps-pages-deployments.json').read_text())
 assert payload['success'], payload.get('errors')
 deployments = payload['result']
-matching = [item for item in deployments if item.get('environment') == 'production' and item.get('deployment_trigger', {}).get('metadata', {}).get('commit_hash') == release_sha]
-assert len(matching) == 1, matching
-deployment_url = matching[0]['url']
+before_ids = set(Path('/tmp/dps-pages-deployment-ids-before.txt').read_text().splitlines())
+created = [item for item in deployments if item['id'] not in before_ids]
+assert len(created) == 1, created
+deployment = created[0]
+metadata = deployment.get('deployment_trigger', {}).get('metadata', {})
+assert deployment.get('environment') == 'production', deployment
+assert deployment.get('latest_stage', {}).get('status') == 'success', deployment
+assert metadata.get('branch') == 'main', metadata
+assert metadata.get('commit_hash') == release_sha, metadata
+deployment_url = deployment['url']
+Path('/tmp/dps-pages-deployment-id.txt').write_text(deployment['id'] + '\n')
 Path('/tmp/dps-pages-deployment-url.txt').write_text(deployment_url + '\n')
 print(deployment_url)
 PY
 ```
 
-Expected: exactly one production deployment matches the release SHA, and its URL is stored in `/tmp/dps-pages-deployment-url.txt`; do not infer it from upload success alone.
+Expected: exactly one deployment ID was added after preflight; that deployment is a successful `main` production deployment for the full release SHA, and its ID and URL are stored. A previous deployment of the same SHA does not make this readback ambiguous.
 
 ### Task 4: Attach the custom hostname and create only the expected DNS record
 
 **Files:**
-- Temporary API responses: `/tmp/dps-pages-domain-attach.json`, `/tmp/dps-dns-create.json`
+- Temporary API response: `/tmp/dps-pages-domain-attach.json`
+- Browser evidence: exact filtered DNS row before and after the single permitted save
 
 **Interfaces:**
 - Consumes: healthy Pages deployment, exact preflight states
@@ -255,31 +263,11 @@ python3 -m json.tool /tmp/dps-pages-domain-attach.json
 
 Expected when absent: `success: true`. If preflight proved the exact hostname already attached, skip this mutation. Attaching the hostname before creating the CNAME follows Cloudflare's required custom-domain flow.
 
-- [ ] **Step 2: Create the DNS record only when the exact-name preflight was empty**
+- [ ] **Step 2: Create the DNS record in the dashboard only when the exact-name preflight was empty**
 
-```bash
-ZONE_NAME=pysyntax.com
-PAGES_TOKEN=$(python3 -c 'import pathlib,re; text=pathlib.Path("/home/bigtrader91/.config/.wrangler/config/default.toml").read_text(); match=re.search(r"oauth_token = \"([^\"]+)\"", text); assert match; print(match.group(1))')
-ZONE_ID=$(curl -sS "https://api.cloudflare.com/client/v4/zones?name=$ZONE_NAME" -H "Authorization: Bearer $PAGES_TOKEN" | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["success"] and len(data["result"]) == 1; print(data["result"][0]["id"])')
-unset PAGES_TOKEN
-DNS_TOKEN=""
-while IFS= read -r candidate; do
-  if curl -fsS "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?per_page=1" -H "Authorization: Bearer $candidate" -o /dev/null; then
-    DNS_TOKEN="$candidate"
-    break
-  fi
-done < <(grep -rhoP '(CLOUDFLARE_API_TOKEN|CLOUDFLARE_DNS_API_TOKEN|CF_API_TOKEN|CF_DNS_API_TOKEN)=\K\S+' /data/coolify/applications/*/.env 2>/dev/null | tr -d '"' | sort -u)
-test -n "$DNS_TOKEN"
-curl -sS -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
-  -H "Authorization: Bearer $DNS_TOKEN" \
-  -H 'Content-Type: application/json' \
-  --data '{"type":"CNAME","name":"driving","content":"driving-practice-simulator.pages.dev","proxied":true}' \
-  -o /tmp/dps-dns-create.json
-unset DNS_TOKEN
-python3 -m json.tool /tmp/dps-dns-create.json
-```
+Read the exact target from `/tmp/dps-pages-subdomain.txt`. In the still-authenticated `pysyntax.com` DNS dashboard, open **Add record** and set Type `CNAME`, Name `driving`, Target to that exact Pages subdomain, Proxy status `Proxied`, and TTL `Auto`. Read the completed form back before clicking **Save**, then click it once. If the exact compatible record already existed, skip this mutation. Do not overwrite, delete, or retry an ambiguous save.
 
-Expected when absent: `success: true` and the result is exactly a proxied CNAME for `driving.pysyntax.com`. If the exact compatible record already existed, skip this mutation.
+Expected when absent: the filtered table contains exactly one row for `driving.pysyntax.com`, with Type `CNAME`, the recorded Pages subdomain as Content, Proxy status `Proxied`, and TTL `Auto`.
 
 - [ ] **Step 3: Re-read both resources without mutating them**
 
@@ -287,41 +275,33 @@ Expected when absent: `success: true` and the result is exactly a proxied CNAME 
 ACCOUNT_ID=2afd6a64c43c506cb297aabcd6c246b7
 PROJECT_NAME=driving-practice-simulator
 CUSTOM_HOST=driving.pysyntax.com
-ZONE_NAME=pysyntax.com
 PAGES_TOKEN=$(python3 -c 'import pathlib,re; text=pathlib.Path("/home/bigtrader91/.config/.wrangler/config/default.toml").read_text(); match=re.search(r"oauth_token = \"([^\"]+)\"", text); assert match; print(match.group(1))')
-curl -fsS \
-  "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/pages/projects/$PROJECT_NAME/domains/$CUSTOM_HOST" \
-  -H "Authorization: Bearer $PAGES_TOKEN" -o /tmp/dps-pages-domain-final.json
-ZONE_ID=$(curl -sS "https://api.cloudflare.com/client/v4/zones?name=$ZONE_NAME" -H "Authorization: Bearer $PAGES_TOKEN" | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["success"] and len(data["result"]) == 1; print(data["result"][0]["id"])')
+for attempt in 1 2 3 4 5 6 7 8; do
+  curl -fsS \
+    "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/pages/projects/$PROJECT_NAME/domains/$CUSTOM_HOST" \
+    -H "Authorization: Bearer $PAGES_TOKEN" -o /tmp/dps-pages-domain-final.json
+  status=$(python3 -c 'import json; print(json.load(open("/tmp/dps-pages-domain-final.json"))["result"]["status"])')
+  echo "domain readback $attempt: $status"
+  test "$status" = active && break
+  test "$attempt" = 8 && exit 1
+  sleep 20
+done
 unset PAGES_TOKEN
-DNS_TOKEN=""
-while IFS= read -r candidate; do
-  if curl -fsS "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?per_page=1" -H "Authorization: Bearer $candidate" -o /dev/null; then
-    DNS_TOKEN="$candidate"
-    break
-  fi
-done < <(grep -rhoP '(CLOUDFLARE_API_TOKEN|CLOUDFLARE_DNS_API_TOKEN|CF_API_TOKEN|CF_DNS_API_TOKEN)=\K\S+' /data/coolify/applications/*/.env 2>/dev/null | tr -d '"' | sort -u)
-test -n "$DNS_TOKEN"
-curl -fsS "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?name=$CUSTOM_HOST" \
-  -H "Authorization: Bearer $DNS_TOKEN" -o /tmp/dps-dns-final.json
-unset DNS_TOKEN
 python3 - <<'PY'
 import json
 from pathlib import Path
 
 domain = json.loads(Path('/tmp/dps-pages-domain-final.json').read_text())
-assert domain['success'] and domain['result']['name'] == 'driving.pysyntax.com', domain
-dns = json.loads(Path('/tmp/dps-dns-final.json').read_text())
-assert dns['success'] and len(dns['result']) == 1, dns
-record = dns['result'][0]
-assert record['type'] == 'CNAME', record
-assert record['content'] == 'driving-practice-simulator.pages.dev', record
-assert record['proxied'] is True, record
-print({'domain': domain['result']['name'], 'dns_id': record['id']})
+result = domain['result']
+assert domain['success'], domain
+assert result['name'] == 'driving.pysyntax.com', result
+assert result['status'] == 'active', result
+assert result.get('validation_data', {}).get('status') == 'active', result
+print({'domain': result['name'], 'status': result['status']})
 PY
 ```
 
-Expected: the Pages project owns `driving.pysyntax.com`, and DNS has exactly one proxied CNAME to `driving-practice-simulator.pages.dev`.
+Re-run the dashboard `driving` filter and read back the exact single DNS row as in Step 2. Expected: the Pages project reports the custom domain and validation as `active`, and the dashboard shows exactly one proxied CNAME to the recorded Pages subdomain.
 
 ### Task 5: Verify public HTTP, TLS, assets, and browser behavior
 
@@ -396,6 +376,12 @@ def verify(browser, label: str, width: int, height: int) -> None:
         page.get_by_role("button", name="훈련 시작", exact=True).click()
         loaded = [response.value for response in responses]
     assert all(response.ok for response in loaded), [(response.url, response.status) for response in loaded]
+    main_canvas = page.locator("div.cursor-crosshair > canvas").first
+    expect(main_canvas).to_be_visible(timeout=30_000)
+    canvas_box = main_canvas.bounding_box()
+    assert canvas_box is not None
+    assert canvas_box["width"] >= width * 0.9, canvas_box
+    assert canvas_box["height"] >= height * 0.9, canvas_box
     expect(page.get_by_text("조작 적응", exact=False).first).to_be_visible()
     page.wait_for_function("key => localStorage.getItem(key) !== null", arg=STORAGE_KEY)
     page.screenshot(path=f"/tmp/dps-cloudflare-{label}-active.png", full_page=True)
@@ -421,7 +407,7 @@ with sync_playwright() as playwright:
 python3 /tmp/dps-cloudflare-browser-smoke.py
 ```
 
-Expected: both viewports print an empty error list, the active training HUD is visible, vehicle asset responses succeed, and reload offers resume/new-session choices.
+Expected: both viewports print an empty error list, the asynchronously inserted main WebGL canvas is visible and at least 90% of the viewport in both dimensions, the active training HUD is visible, vehicle asset responses succeed, and reload offers resume/new-session choices.
 
 If any Task 5 check fails, do not deploy again or mutate DNS. Report the failed proof and the preflight production deployment from `/tmp/dps-pages-deployments-before.json`. If that prior deployment was known healthy, request explicit rollback approval before promoting or redeploying it; if this was the first deployment, preserve the diagnostic state and stop.
 
@@ -458,9 +444,7 @@ Expected: custom hostname is `200 0`, release HEAD equals live `origin/main`, re
 rm -f /tmp/dps-pages-project-preflight.json \
   /tmp/dps-pages-domain-preflight.json \
   /tmp/dps-pages-deployments-before.json \
-  /tmp/dps-dns-preflight.json \
-  /tmp/dps-pages-domain-attach.json \
-  /tmp/dps-dns-create.json
+  /tmp/dps-pages-domain-attach.json
 ```
 
 Expected: no token was written to disk. Preserve the release worktree, deployment output, deployment metadata, browser script, and screenshots until the user separately approves cleanup.

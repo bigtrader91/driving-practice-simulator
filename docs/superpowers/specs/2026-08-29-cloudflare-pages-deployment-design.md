@@ -34,18 +34,18 @@ The deployment record must retain the source commit and the Cloudflare deploymen
 
 ## Cloudflare resource contract
 
-Wrangler OAuth authentication may create and deploy the Pages project and attach the custom hostname. DNS writes use a separately authorized DNS-edit token without printing or persisting its value in the repository or logs.
+Wrangler OAuth authentication may create and deploy the Pages project and attach the custom hostname. DNS inspection and the single DNS write use the operator's authenticated Cloudflare dashboard session. Do not discover credentials from unrelated applications. If dashboard access is unavailable, stop and request one explicitly identified, least-privilege `pysyntax.com` DNS Edit credential through an approved secret-input mechanism without placing it in arguments, repository files, or logs.
 
 Before mutation, inspect the Pages project name, custom hostname attachment, and the exact DNS name. An existing compatible resource is reused idempotently. An existing incompatible project or DNS record is a visible stop condition; it is never overwritten or deleted automatically.
 
-Only the `driving` record in the `pysyntax.com` zone is in scope. The expected record is a proxied CNAME from `driving.pysyntax.com` to `driving-practice-simulator.pages.dev`.
+Only the `driving` record in the `pysyntax.com` zone is in scope. The expected record is a proxied CNAME from `driving.pysyntax.com` to the exact `subdomain` returned by the Pages project API; never derive the target from the requested project name.
 
 ## Release flow
 
 1. Resolve and record the current `origin/main` commit.
 2. Verify the isolated worktree, dependencies, tests, typecheck, and production build.
 3. Verify Cloudflare identity and inspect existing Pages and DNS resources.
-4. Create or reuse the Pages project, then deploy `dist/` for branch `main` with the exact source commit recorded.
+4. Create or reuse the Pages project, record its returned `subdomain`, then deploy `dist/` for branch `main` with the exact source commit and newly added deployment ID recorded.
 5. Attach the custom hostname and create the expected CNAME only when needed.
 6. Wait for DNS and certificate propagation, then perform public readback checks.
 
@@ -58,12 +58,12 @@ If a new deployment is unhealthy while an earlier healthy Pages deployment exist
 ## Verification contract
 
 - `npm test -- --run`, `npx tsc --noEmit`, and `npm run build` succeed from the exact release worktree.
-- The Cloudflare deployment record identifies the expected source commit.
+- Exactly one deployment ID is added after the preflight snapshot, and its Cloudflare record identifies the expected source commit, production branch, and successful status.
 - Both the generated `*.pages.dev` URL and `https://driving.pysyntax.com/` return HTTP 200 with successful TLS validation.
 - Vehicle GLB and required static assets return successful responses from the custom hostname.
 - Chromium checks at desktop and mobile viewports render the game canvas with zero page or console errors.
 - A training session can be started, persisted in local storage, and offered for resume after reload on the custom hostname.
-- Final readback confirms the custom hostname, public response, deployment commit, and unchanged canonical checkout.
+- Final readback confirms the custom hostname and validation are `active`, the public response, deployment commit, exact DNS target, and unchanged canonical checkout.
 
 ## Delivery boundary
 
