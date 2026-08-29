@@ -550,7 +550,8 @@ describe('SimulationCanvas component integration', () => {
 
     expect(runtimeMocks.buildTrack).toHaveBeenCalledOnce();
     expect(runtimeMocks.createVisual).toHaveBeenCalledTimes(4);
-    expect(library.createVehicle).toHaveBeenCalledTimes(5);
+    expect(library.createVehicle).toHaveBeenCalledTimes(3);
+    expect(library.createTrafficSedan).toHaveBeenCalledTimes(2);
     expect(runtimeMocks.createVisual.mock.results.map(({ value }) => value.group.name)).toEqual([
       'LOADED_TRAFFIC_COMPACT',
       'LOADED_TRAFFIC_COMPACT',

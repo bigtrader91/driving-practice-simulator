@@ -9,6 +9,7 @@ from mathutils import Vector
 
 TRAFFIC_SEDAN_DIMENSIONS = (1.82, 4.65, 1.45)
 TRAFFIC_SEDAN_WHEELBASE = 2.99
+KAYKIT_TRAFFIC_WHEELBASE = 2.49
 
 EXPECTED = {
     "compact": (1.60, 3.60, 1.55, True),
@@ -49,7 +50,7 @@ MAX_RUNTIME_TRIANGLES = 50_000
 MAX_LAMP_DEPTH = 0.16
 MAX_RIM_DIAMETER = 0.82
 MAX_GLASS_ALPHA = 0.58
-TRAFFIC_WHEELBASE = 2.99
+TRAFFIC_WHEELBASE = TRAFFIC_SEDAN_WHEELBASE
 TRAFFIC_WHEELBASE_TOLERANCE = 0.08
 MIN_TRAFFIC_WHEEL_WELL_RADIUS = 0.25
 
@@ -223,7 +224,11 @@ def wheel_parent_chain(root: bpy.types.Object) -> list[bpy.types.Object]:
     return object_parent_chain(root)
 
 
-def validate_wheel_roots(asset: str, wheel_roots: list[bpy.types.Object]) -> list[str]:
+def validate_wheel_roots(
+    asset: str,
+    wheel_roots: list[bpy.types.Object],
+    expected_wheelbase: float,
+) -> list[str]:
     failures: list[str] = []
     if len(wheel_roots) != len(TRAFFIC_WHEEL_NAMES):
         failures.append(
@@ -238,9 +243,9 @@ def validate_wheel_roots(asset: str, wheel_roots: list[bpy.types.Object]) -> lis
     front_y = sum(root.matrix_world.translation.y for root in wheel_roots[:2]) / 2
     rear_y = sum(root.matrix_world.translation.y for root in wheel_roots[2:]) / 2
     wheelbase = front_y - rear_y
-    if abs(wheelbase - TRAFFIC_WHEELBASE) > TRAFFIC_WHEELBASE_TOLERANCE:
+    if abs(wheelbase - expected_wheelbase) > TRAFFIC_WHEELBASE_TOLERANCE:
         failures.append(
-            f"{asset}: wheelbase {wheelbase:.3f}m expected {TRAFFIC_WHEELBASE:.3f}m "
+            f"{asset}: wheelbase {wheelbase:.3f}m expected {expected_wheelbase:.3f}m "
             f"±{TRAFFIC_WHEELBASE_TOLERANCE:.3f}m"
         )
 
@@ -258,7 +263,12 @@ def validate_wheel_roots(asset: str, wheel_roots: list[bpy.types.Object]) -> lis
     return failures
 
 
-def validate_asset(root: Path, asset: str, expected: tuple[float, float, float, bool]) -> list[str]:
+def validate_asset(
+    root: Path,
+    asset: str,
+    expected: tuple[float, float, float, bool],
+    traffic_wheelbase: float = TRAFFIC_WHEELBASE,
+) -> list[str]:
     width, length, height, player_controls = expected
     path = root / "public" / "models" / "vehicles" / f"{asset}.glb"
     if not path.is_file():
@@ -339,7 +349,7 @@ def validate_asset(root: Path, asset: str, expected: tuple[float, float, float, 
     if asset == "traffic-compact":
         if all(name in bpy.data.objects for name in TRAFFIC_WHEEL_NAMES):
             wheel_roots = [bpy.data.objects[name] for name in TRAFFIC_WHEEL_NAMES]
-            failures.extend(validate_wheel_roots(asset, wheel_roots))
+            failures.extend(validate_wheel_roots(asset, wheel_roots, traffic_wheelbase))
 
         size = path.stat().st_size
         triangles = triangle_count()
@@ -421,7 +431,18 @@ def validate_asset(root: Path, asset: str, expected: tuple[float, float, float, 
 
 def main() -> None:
     root = repository_root()
-    results = [(asset, validate_asset(root, asset, expected)) for asset, expected in EXPECTED.items()]
+    results = [
+        (
+            asset,
+            validate_asset(
+                root,
+                asset,
+                expected,
+                KAYKIT_TRAFFIC_WHEELBASE if asset == "traffic-compact" else TRAFFIC_WHEELBASE,
+            ),
+        )
+        for asset, expected in EXPECTED.items()
+    ]
     failures = [failure for _, asset_failures in results for failure in asset_failures]
     if failures:
         print("VEHICLE_ASSET_VALIDATION_FAILED")

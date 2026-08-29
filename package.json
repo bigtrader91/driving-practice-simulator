@@ -12,8 +12,7 @@
     "test:physics": "vitest run src/simulation/VehicleMotion.test.ts src/simulation/LaneChangePhysics.test.ts",
     "vehicles:generate": "blender --background --python-exit-code 1 --python assets/blender/generate_vehicles.py -- .",
     "vehicles:prepare-family": "blender --background --python-exit-code 1 --python assets/blender/prepare_vehicle_family.py -- .",
-    "vehicles:prepare-khronos": "blender --background --python-exit-code 1 --python assets/blender/prepare_khronos_traffic.py -- . /data/ai/modly/sources/khronos-car-concept/CarConcept.glb /data/ai/modly/sources/khronos-car-concept/LICENSE.md /data/ai/modly/workspaces/khronos-traffic-sedan.blend public/models/vehicles/traffic-compact.glb",
-    "vehicles:render-khronos": "blender --background --python-exit-code 1 --python assets/blender/render_khronos_traffic.py -- /data/ai/modly/workspaces/khronos-traffic-sedan.blend public/models/vehicles/traffic-compact.glb /data/ai/modly/previews/khronos-traffic-sedan",
+    "vehicles:prepare-traffic": "blender --background --python-exit-code 1 --python assets/blender/prepare_kaykit_traffic.py -- . assets/vehicle-sources/kaykit-city-builder-bits/car_sedan.gltf assets/vehicle-sources/kaykit-city-builder-bits/LICENSE.txt public/models/vehicles/traffic-compact.glb",
     "vehicles:validate": "blender --background --python-exit-code 1 --python assets/blender/validate_vehicles.py -- ."
   },
   "dependencies": {

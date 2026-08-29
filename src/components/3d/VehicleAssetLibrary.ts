@@ -4,12 +4,21 @@ import {
   bindVehicleAsset,
   cloneVehicleAsset,
   type BoundVehicleAsset,
+  type VehicleAssetKind,
 } from './VehicleAssetContract';
 import type { VehicleType } from '../../types/simulator';
 
 export type RuntimeVehicleKind = VehicleType | 'truck';
 
-const vehicleKinds = ['compact', 'sedan', 'suv', 'truck'] as const satisfies readonly RuntimeVehicleKind[];
+type LoadedVehicleKind = RuntimeVehicleKind | 'traffic-compact';
+
+const vehicleKinds = [
+  'compact',
+  'sedan',
+  'suv',
+  'truck',
+  'traffic-compact',
+] as const satisfies readonly LoadedVehicleKind[];
 const libraryPromises = new Map<string, Promise<VehicleAssetLibrary>>();
 
 export interface VehicleAssetLibrary {
@@ -38,7 +47,7 @@ export const loadVehicleAssetLibrary = (
   const cached = libraryPromises.get(normalizedBaseUrl);
   if (cached) return cached;
 
-  const loadTemplate = async (kind: RuntimeVehicleKind) => {
+  const loadTemplate = async (kind: LoadedVehicleKind) => {
     const url = `${normalizedBaseUrl}models/vehicles/${kind}.glb`;
     try {
       const scene = await loadScene(url);
@@ -54,14 +63,16 @@ export const loadVehicleAssetLibrary = (
   const promise = Promise.resolve()
     .then(() => Promise.all(vehicleKinds.map(loadTemplate)))
     .then((entries) => {
-      const templates = new Map<RuntimeVehicleKind, THREE.Group>(entries);
+      const templates = new Map<LoadedVehicleKind, THREE.Group>(entries);
       const createVehicle = (
-        kind: RuntimeVehicleKind,
+        kind: VehicleAssetKind,
         color: THREE.ColorRepresentation,
       ) => cloneVehicleAsset(templates.get(kind)!, kind, color);
       return {
         createVehicle,
-        createTrafficSedan: (color: THREE.ColorRepresentation) => createVehicle('sedan', color),
+        createTrafficSedan: (color: THREE.ColorRepresentation) => (
+          createVehicle('traffic-compact', color)
+        ),
       };
     });
 

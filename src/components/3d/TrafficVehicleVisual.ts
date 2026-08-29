@@ -73,7 +73,9 @@ const createLoadedVisual = (
   data: TrafficVehicleData,
   assets: VehicleAssetLibrary,
 ): TrafficVehicleVisual => {
-  const asset = assets.createVehicle(data.type, data.color);
+  const asset = data.type === 'sedan'
+    ? assets.createTrafficSedan(data.color)
+    : assets.createVehicle(data.type, data.color);
   const visual: TrafficVehicleVisual = {
     group: asset.group,
     headlights: asset.headlights,
