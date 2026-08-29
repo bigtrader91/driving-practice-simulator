@@ -8,7 +8,7 @@ Publish the completed static driving simulator at `https://driving.pysyntax.com`
 
 Use a one-time direct Cloudflare Pages deployment of the pre-built Vite `dist/` directory. The Pages project is named `driving-practice-simulator`, its production branch is `main`, and the custom hostname is `driving.pysyntax.com`.
 
-Direct deployment is preferred for the first release because it adds no GitHub workflow, repository secret, or Cloudflare Git integration. Automated deployment can be designed later if repeated manual releases create measurable operating cost.
+Direct deployment is preferred for the first release because it adds no GitHub workflow, repository secret, or Cloudflare Git integration. Cloudflare does not allow a Direct Upload Pages project to switch to Git integration later. If repeated manual releases create measurable operating cost, automation must continue to upload with Wrangler from CI, or a separately named Git-integrated project must be designed and cut over explicitly.
 
 ## Scope
 
