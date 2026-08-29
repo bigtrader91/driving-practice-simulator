@@ -41,8 +41,45 @@ import {
   AttemptEvent,
   isAttemptPassed,
 } from './simulation/AttemptAssessment';
+import {
+  clearTrainingPersistence,
+  createEmptyTrainingPersistence,
+  loadTrainingPersistence,
+  saveTrainingPersistence,
+  snapshotForTrainingSession,
+  type StorageLike,
+  type TrainingPersistenceIssue,
+  type TrainingPersistenceLoadResult,
+} from './simulation/TrainingSessionPersistence';
 
 const LANE_CHANGE_MISSION = MISSIONS.find((mission) => mission.id === 'city_lane_change') ?? MISSIONS[0];
+
+const getBrowserStorage = (): StorageLike | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+};
+
+const loadInitialTrainingPersistence = (): TrainingPersistenceLoadResult => {
+  if (typeof window === 'undefined') {
+    return { status: 'ready', snapshot: createEmptyTrainingPersistence() };
+  }
+  const storage = getBrowserStorage();
+  if (!storage) {
+    return {
+      status: 'invalid',
+      snapshot: createEmptyTrainingPersistence(),
+      issue: {
+        kind: 'storage-unavailable',
+        message: '브라우저 저장소를 사용할 수 없어 훈련 진행 상황을 보존할 수 없습니다.',
+      },
+    };
+  }
+  return loadTrainingPersistence(storage);
+};
 
 export const App: React.FC = () => {
   // Config & Mission state
@@ -61,7 +98,17 @@ export const App: React.FC = () => {
   const [lastCompletedScore, setLastCompletedScore] = useState(100);
   const [lastDeductions, setLastDeductions] = useState<ScoreDeduction[]>([]);
   const [failReason, setFailReason] = useState<string | null>(null);
+  const [initialPersistence] = useState(loadInitialTrainingPersistence);
   const [trainingSession, setTrainingSession] = useState(createTrainingSession);
+  const persistenceSnapshotRef = useRef(initialPersistence.snapshot);
+  const persistenceWriteEnabledRef = useRef(initialPersistence.status === 'ready');
+  const [resumableSession, setResumableSession] = useState(
+    initialPersistence.status === 'ready' ? initialPersistence.snapshot.activeSession : null,
+  );
+  const [latestCompleted, setLatestCompleted] = useState(initialPersistence.snapshot.latestCompleted);
+  const [persistenceIssue, setPersistenceIssue] = useState<TrainingPersistenceIssue | null>(
+    initialPersistence.status === 'invalid' ? initialPersistence.issue : null,
+  );
   const [pendingAttemptResult, setPendingAttemptResult] = useState<{
     score: number;
     passed: boolean;
@@ -154,6 +201,27 @@ export const App: React.FC = () => {
     setShowFeedbackModal(false);
     setFailReason(null);
     setSimKey((prev) => prev + 1);
+  }, []);
+
+  const persistTrainingSessionState = useCallback((session: ReturnType<typeof createTrainingSession>) => {
+    const snapshot = snapshotForTrainingSession(
+      persistenceSnapshotRef.current,
+      session,
+      new Date().toISOString(),
+    );
+    persistenceSnapshotRef.current = snapshot;
+    setLatestCompleted(snapshot.latestCompleted);
+    if (!persistenceWriteEnabledRef.current) return;
+    const storage = getBrowserStorage();
+    if (!storage) {
+      setPersistenceIssue({
+        kind: 'storage-unavailable',
+        message: '브라우저 저장소를 사용할 수 없어 훈련 진행 상황을 보존할 수 없습니다.',
+      });
+      return;
+    }
+    const result = saveTrainingPersistence(storage, snapshot);
+    setPersistenceIssue(result.ok ? null : result.issue);
   }, []);
 
   const handleGearChange = useCallback((g: GearMode) => {
@@ -372,6 +440,7 @@ export const App: React.FC = () => {
     }
     const nextSession = completeTrainingAttempt(trainingSession, pendingAttemptResult);
     setTrainingSession(nextSession);
+    persistTrainingSessionState(nextSession);
     setPendingAttemptResult(null);
     setShowFeedbackModal(false);
     setFailReason(null);
@@ -379,7 +448,7 @@ export const App: React.FC = () => {
       setCurrentMission(missionForTrainingAttempt(LANE_CHANGE_MISSION, nextSession.currentAttempt.direction));
       handleResetCar();
     }
-  }, [handleResetCar, pendingAttemptResult, trainingSession]);
+  }, [handleResetCar, pendingAttemptResult, persistTrainingSessionState, trainingSession]);
 
   const handleSelectMissionAfterFailure = useCallback(() => {
     setPendingAttemptResult(null);
@@ -538,11 +607,25 @@ export const App: React.FC = () => {
 
       <TrainingFlowOverlay
         session={trainingSession}
+        resumableSession={resumableSession}
+        latestCompleted={latestCompleted}
+        persistenceIssue={persistenceIssue}
         onStart={() => {
           const session = startTrainingSession(trainingSession);
           if (!session.currentAttempt) throw new Error('첫 훈련 시도가 생성되지 않았습니다.');
           setCurrentMission(missionForTrainingAttempt(LANE_CHANGE_MISSION, session.currentAttempt.direction));
           setTrainingSession(session);
+          setResumableSession(null);
+          persistTrainingSessionState(session);
+          handleResetCar();
+        }}
+        onResume={() => {
+          if (!resumableSession) throw new Error('이어갈 훈련 세션이 없습니다.');
+          setTrainingSession(resumableSession);
+          setResumableSession(null);
+          if (resumableSession.lifecycle === 'active' && resumableSession.currentAttempt) {
+            setCurrentMission(missionForTrainingAttempt(LANE_CHANGE_MISSION, resumableSession.currentAttempt.direction));
+          }
           handleResetCar();
         }}
         onBeginPostAssessment={() => {
@@ -550,12 +633,43 @@ export const App: React.FC = () => {
           if (!session.currentAttempt) throw new Error('사후 평가 시도가 생성되지 않았습니다.');
           setCurrentMission(missionForTrainingAttempt(LANE_CHANGE_MISSION, session.currentAttempt.direction));
           setTrainingSession(session);
+          persistTrainingSessionState(session);
           handleResetCar();
         }}
         onRestart={() => {
-          setTrainingSession(createTrainingSession());
+          const session = createTrainingSession();
+          setTrainingSession(session);
+          setResumableSession(null);
+          persistTrainingSessionState(session);
           setPendingAttemptResult(null);
           handleResetCar();
+        }}
+        onClearPersistenceError={() => {
+          const storage = getBrowserStorage();
+          if (!storage) {
+            setPersistenceIssue({
+              kind: 'storage-unavailable',
+              message: '브라우저 저장소를 사용할 수 없어 저장 데이터를 삭제하지 못했습니다.',
+            });
+            return;
+          }
+          const result = clearTrainingPersistence(storage);
+          if (!result.ok) {
+            setPersistenceIssue(result.issue);
+            return;
+          }
+          const empty = createEmptyTrainingPersistence();
+          const snapshot = snapshotForTrainingSession(
+            empty,
+            trainingSession,
+            new Date().toISOString(),
+          );
+          persistenceSnapshotRef.current = snapshot;
+          persistenceWriteEnabledRef.current = true;
+          setResumableSession(null);
+          setLatestCompleted(snapshot.latestCompleted);
+          const writeResult = saveTrainingPersistence(storage, snapshot);
+          setPersistenceIssue(writeResult.ok ? null : writeResult.issue);
         }}
       />
     </div>
