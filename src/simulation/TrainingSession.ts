@@ -41,6 +41,40 @@ const POST_ATTEMPTS: TrainingAttempt[] = [
   { id: 'post-5', phase: 'post-assessment', direction: 'left', scored: true, guidance: false },
 ];
 
+const ALL_ATTEMPTS = [...PRE_POST_ATTEMPTS, ...POST_ATTEMPTS];
+
+const matchesAttempt = (actual: TrainingAttempt, expected: TrainingAttempt): boolean =>
+  actual.id === expected.id
+  && actual.phase === expected.phase
+  && actual.direction === expected.direction
+  && actual.scored === expected.scored
+  && actual.guidance === expected.guidance;
+
+export function hasCanonicalTrainingProgress(session: TrainingSession): boolean {
+  const resultsAreCanonical = session.results.every((result, index) => {
+    const expected = ALL_ATTEMPTS[index];
+    if (!expected || !matchesAttempt(result, expected)) return false;
+    return expected.scored
+      ? result.score !== null && result.passed !== null
+      : result.score === null && result.passed === null;
+  });
+  if (!resultsAreCanonical) return false;
+
+  if (session.lifecycle === 'welcome') {
+    return session.results.length === 0 && session.currentAttempt === null;
+  }
+  if (session.lifecycle === 'post-briefing') {
+    return session.results.length === PRE_POST_ATTEMPTS.length && session.currentAttempt === null;
+  }
+  if (session.lifecycle === 'results') {
+    return session.results.length === ALL_ATTEMPTS.length && session.currentAttempt === null;
+  }
+  const expectedCurrentAttempt = ALL_ATTEMPTS[session.results.length];
+  return expectedCurrentAttempt !== undefined
+    && session.currentAttempt !== null
+    && matchesAttempt(session.currentAttempt, expectedCurrentAttempt);
+}
+
 export function createTrainingSession(): TrainingSession {
   return { lifecycle: 'welcome', currentAttempt: null, results: [] };
 }
