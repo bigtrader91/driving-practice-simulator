@@ -36,6 +36,7 @@ import {
   getForwardDirection,
   getHoodCameraOffset,
   getMirrorDirection,
+  orientCameraToward,
   getRearDirection,
   getVisualWheelSteerRotation,
   type MirrorView,
@@ -797,8 +798,11 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
           heading + headYaw,
           headPitch + camPitchInertia - 0.04
         );
-        mainCamera.lookAt(mainCamera.position.clone().add(lookDir));
-        mainCamera.rotation.z = camRollInertia;
+        orientCameraToward(
+          mainCamera,
+          mainCamera.position.clone().add(lookDir),
+          camRollInertia,
+        );
       } else if (uiStateRef.current.cameraMode === 'chase') {
         const chaseDist = 6.8;
         const chaseHeight = 3.2 + vibeOffset;
@@ -807,22 +811,29 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
           .add(carPos);
         camPos.y += chaseHeight;
         mainCamera.position.lerp(camPos, 10 * delta);
-        mainCamera.lookAt(carPos.x, carPos.y + 1.2, carPos.z);
-        mainCamera.rotation.z = 0;
+        orientCameraToward(mainCamera, new THREE.Vector3(carPos.x, carPos.y + 1.2, carPos.z));
       } else if (uiStateRef.current.cameraMode === 'top') {
         mainCamera.position.set(carPos.x, carPos.y + 24, carPos.z);
-        mainCamera.lookAt(carPos.x, carPos.y, carPos.z);
-        mainCamera.rotation.z = 0;
+        orientCameraToward(mainCamera, carPos);
       } else if (uiStateRef.current.cameraMode === 'hood') {
         const hoodOffset = getHoodCameraOffset(vehicle, vibeOffset)
           .applyAxisAngle(new THREE.Vector3(0, 1, 0), heading);
         mainCamera.position.copy(carPos).add(hoodOffset);
         const lookDir = getForwardDirection(heading);
-        mainCamera.lookAt(mainCamera.position.clone().add(lookDir));
-        mainCamera.rotation.z = 0;
+        orientCameraToward(mainCamera, mainCamera.position.clone().add(lookDir));
       }
 
-      renderer.render(scene, mainCamera);
+      if (uiStateRef.current.cameraMode === 'cockpit') {
+        const carVisibility = car3D.carGroup.visible;
+        car3D.carGroup.visible = false;
+        try {
+          renderer.render(scene, mainCamera);
+        } finally {
+          car3D.carGroup.visible = carVisibility;
+        }
+      } else {
+        renderer.render(scene, mainCamera);
+      }
 
       const renderMirror = (
         mirrorRenderer: THREE.WebGLRenderer | null,

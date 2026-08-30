@@ -103,6 +103,7 @@ export interface MissionZone {
 
 export interface Mission {
   id: string;
+  visualVariant?: number;
   title: string;
   subtitle: string;
   category: MissionCategory;

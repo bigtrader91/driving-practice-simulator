@@ -12,6 +12,7 @@ import {
   getOrbitVehicleHeading,
   getRearDirection,
   getVisualWheelSteerRotation,
+  orientCameraToward,
 } from './VehicleCoordinateSystem';
 
 const yAxis = new THREE.Vector3(0, 1, 0);
@@ -104,5 +105,29 @@ describe('vehicle coordinate system', () => {
     expect(left.z).toBeGreaterThan(0);
     expect(right.z).toBeGreaterThan(0);
     expect(rear.z).toBeGreaterThan(0);
+  });
+
+  it.each([91, 120, 179, 181, 240, 269])(
+    '차량 방향이 %s도여도 카메라 상하축이 뒤집히지 않는다',
+    (headingDegrees) => {
+      const camera = new THREE.PerspectiveCamera();
+      const heading = THREE.MathUtils.degToRad(headingDegrees);
+      const target = getForwardDirection(heading);
+
+      orientCameraToward(camera, target, 0);
+
+      const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+      expect(cameraUp.y).toBeCloseTo(1, 10);
+    },
+  );
+
+  it('운전석 기울기는 뒤집힘 없이 카메라 로컬 전방축에 적용된다', () => {
+    const camera = new THREE.PerspectiveCamera();
+    const target = getForwardDirection(THREE.MathUtils.degToRad(120));
+
+    orientCameraToward(camera, target, 0.2);
+
+    const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+    expect(cameraUp.y).toBeCloseTo(0.9800665778, 8);
   });
 });

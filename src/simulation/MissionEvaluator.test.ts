@@ -121,6 +121,72 @@ describe('MissionEvaluator — 깜빡이/미러 이관 체크', () => {
     });
     expect(r.penalties).toHaveLength(0);
   });
+
+  it('같은 방향 미러를 5초 이내에 확인했으면 조향 순간 놓아도 감점하지 않는다', () => {
+    let clock = 0;
+    const ev = new MissionEvaluator(laneChangeMission, () => clock);
+    ev.evaluate({
+      carState: makeCar({ leftMirrorLooked: true }),
+      traffic: [], lights: null,
+    });
+
+    clock = 4000;
+    const r = ev.evaluate({
+      carState: makeCar({
+        speed: 30,
+        speedMs: 8.3,
+        steerAngle: -0.2,
+        turnSignal: 'left',
+      }),
+      traffic: [], lights: null,
+    });
+
+    expect(r.penalties).toHaveLength(0);
+  });
+
+  it('반대 방향 미러 확인은 차선 변경 확인으로 인정하지 않는다', () => {
+    let clock = 0;
+    const ev = new MissionEvaluator(laneChangeMission, () => clock);
+    ev.evaluate({
+      carState: makeCar({ rightMirrorLooked: true }),
+      traffic: [], lights: null,
+    });
+
+    clock = 1000;
+    const r = ev.evaluate({
+      carState: makeCar({
+        speed: 30,
+        speedMs: 8.3,
+        steerAngle: -0.2,
+        turnSignal: 'left',
+      }),
+      traffic: [], lights: null,
+    });
+
+    expect(r.penalties.map(({ points }) => points)).toEqual([20]);
+  });
+
+  it('5초보다 오래된 미러 확인은 다시 확인하도록 감점한다', () => {
+    let clock = 0;
+    const ev = new MissionEvaluator(laneChangeMission, () => clock);
+    ev.evaluate({
+      carState: makeCar({ leftMirrorLooked: true }),
+      traffic: [], lights: null,
+    });
+
+    clock = 5001;
+    const r = ev.evaluate({
+      carState: makeCar({
+        speed: 30,
+        speedMs: 8.3,
+        steerAngle: -0.2,
+        turnSignal: 'left',
+      }),
+      traffic: [], lights: null,
+    });
+
+    expect(r.penalties.map(({ points }) => points)).toEqual([20]);
+  });
 });
 
 describe('MissionEvaluator — 신호위반 즉시 실패', () => {

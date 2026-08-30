@@ -72,6 +72,8 @@ const runtimeMocks = vi.hoisted(() => ({
   disposeVisual: vi.fn(),
   rendererInstances: [] as Array<{ dispose: ReturnType<typeof vi.fn> }>,
   animationCallbacks: [] as FrameRequestCallback[],
+  playerGroup: null as THREE.Group | null,
+  renderedPlayerGroupVisibility: [] as boolean[],
 }));
 
 vi.mock('react', async (importOriginal) => {
@@ -94,7 +96,11 @@ vi.mock('three', async (importOriginal) => {
     toneMappingExposure = 0;
     setSize = vi.fn();
     setPixelRatio = vi.fn();
-    render = vi.fn();
+    render = vi.fn(() => {
+      if (runtimeMocks.playerGroup) {
+        runtimeMocks.renderedPlayerGroupVisibility.push(runtimeMocks.playerGroup.visible);
+      }
+    });
     dispose = vi.fn();
 
     constructor() {
@@ -126,12 +132,19 @@ vi.mock('./TrafficVehicleVisual', async (importOriginal) => {
 
 vi.mock('./CarModel', () => ({
   createCar3DGroup: () => {
+    const carGroup = new THREE.Group();
+    const body = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshStandardMaterial(),
+    );
+    carGroup.add(body);
+    runtimeMocks.playerGroup = carGroup;
     const makeLight = () => new THREE.Mesh(
       new THREE.BoxGeometry(1, 1, 1),
       new THREE.MeshStandardMaterial(),
     );
     return {
-      carGroup: new THREE.Group(),
+      carGroup,
       steeringWheelMesh: new THREE.Group(),
       frontLeftWheel: new THREE.Group(),
       frontRightWheel: new THREE.Group(),
@@ -492,6 +505,8 @@ describe('SimulationCanvas component integration', () => {
     runtimeMocks.disposeVisual.mockClear();
     runtimeMocks.rendererInstances.length = 0;
     runtimeMocks.animationCallbacks.length = 0;
+    runtimeMocks.playerGroup = null;
+    runtimeMocks.renderedPlayerGroupVisibility.length = 0;
     container.replaceChildren.mockClear();
     Object.values(soundMocks).forEach((mock) => mock.mockClear());
     trajectoryMocks.dispose.mockClear();
@@ -603,6 +618,37 @@ describe('SimulationCanvas component integration', () => {
     runtimeMocks.createVisual.mock.results.forEach(({ value }) => {
       expect(runtimeMocks.disposeVisual).toHaveBeenCalledWith(value);
     });
+  });
+
+  it('운전석 본화면에서만 플레이어 차량 전체를 숨기고 미러 렌더 전에 복구한다', async () => {
+    runtimeMocks.loadLibrary.mockResolvedValue({
+      createVehicle: vi.fn(() => makeBoundAsset()),
+      createTrafficSedan: vi.fn(() => makeBoundAsset()),
+    });
+    const mirror = { current: {} as HTMLCanvasElement };
+    const props = {
+      ...makeComponentProps(),
+      leftMirrorCanvasRef: mirror,
+      rightMirrorCanvasRef: mirror,
+      rearMirrorCanvasRef: mirror,
+    };
+
+    renderComponent(props);
+    hookHarness.flushEffects();
+    await Promise.resolve();
+    await Promise.resolve();
+    renderComponent(props);
+    hookHarness.flushEffects();
+
+    runtimeMocks.animationCallbacks[0](performance.now() + 16);
+
+    expect(runtimeMocks.renderedPlayerGroupVisibility.slice(0, 4)).toEqual([
+      false,
+      true,
+      true,
+      true,
+    ]);
+    expect(runtimeMocks.playerGroup?.visible).toBe(true);
   });
 
   it('shows the active load failure in the console and alert without constructing a fallback', async () => {

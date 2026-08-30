@@ -33,6 +33,7 @@ import {
   isTrainingAttemptActive,
   shouldRevealAttemptResult,
   startTrainingSession,
+  type TrainingSession,
 } from './simulation/TrainingSession';
 import { missionForTrainingAttempt } from './simulation/TrainingMission';
 import {
@@ -81,6 +82,47 @@ const loadInitialTrainingPersistence = (): TrainingPersistenceLoadResult => {
   return loadTrainingPersistence(storage);
 };
 
+export const createMissionStartCarState = (mission: Mission): CarState => ({
+  x: mission.startPos[0],
+  y: mission.startPos[1],
+  z: mission.startPos[2],
+  speed: 0,
+  speedMs: 0,
+  steerAngle: 0,
+  steeringWheelAngle: 0,
+  steeringWheelTurns: 0,
+  steeringWheelDegrees: 0,
+  heading: mission.startHeading,
+  gear: 'D',
+  isBraking: false,
+  isAccelerating: false,
+  isHandbrake: false,
+  turnSignal: 'none',
+  headlights: true,
+  leftMirrorLooked: false,
+  rightMirrorLooked: false,
+  rearMirrorLooked: false,
+  lastMirrorCheckTime: 0,
+  inCollision: false,
+  rpm: 800,
+  odometer: 0,
+});
+
+export const prepareTrainingAttemptStart = (session: TrainingSession): {
+  mission: Mission;
+  carState: CarState;
+} => {
+  if (session.lifecycle !== 'active' || !session.currentAttempt) {
+    throw new Error('시작할 훈련 시도가 없습니다.');
+  }
+  const mission = missionForTrainingAttempt(
+    LANE_CHANGE_MISSION,
+    session.currentAttempt.direction,
+    session.results.length,
+  );
+  return { mission, carState: createMissionStartCarState(mission) };
+};
+
 export const App: React.FC = () => {
   // Config & Mission state
   const [currentVehicle, setCurrentVehicle] = useState<VehicleConfig>(VEHICLES.sedan);
@@ -118,31 +160,7 @@ export const App: React.FC = () => {
   const showTrainingGuidance = hasActiveGuidance(trainingSession);
 
   // Real-time Sim State
-  const [carState, setCarState] = useState<CarState>({
-    x: currentMission.startPos[0],
-    y: currentMission.startPos[1],
-    z: currentMission.startPos[2],
-    speed: 0,
-    speedMs: 0,
-    steerAngle: 0,
-    steeringWheelAngle: 0,
-    steeringWheelTurns: 0,
-    steeringWheelDegrees: 0,
-    heading: currentMission.startHeading,
-    gear: 'D',
-    isBraking: false,
-    isAccelerating: false,
-    isHandbrake: false,
-    turnSignal: 'none',
-    headlights: true,
-    leftMirrorLooked: false,
-    rightMirrorLooked: false,
-    rearMirrorLooked: false,
-    lastMirrorCheckTime: 0,
-    inCollision: false,
-    rpm: 800,
-    odometer: 0,
-  });
+  const [carState, setCarState] = useState<CarState>(() => createMissionStartCarState(currentMission));
 
   const [sensors, setSensors] = useState<ProximitySensorData>({
     frontLeft: -1,
@@ -194,14 +212,19 @@ export const App: React.FC = () => {
 
   const [simKey, setSimKey] = useState(0);
 
-  const handleResetCar = useCallback(() => {
+  const resetCarState = useCallback((nextCarState: CarState) => {
     releaseTransientInputs(inputsRef.current, true);
+    setCarState(nextCarState);
     setCurrentScore(100);
     setRecentPenalty(null);
     setShowFeedbackModal(false);
     setFailReason(null);
     setSimKey((prev) => prev + 1);
   }, []);
+
+  const handleResetCar = useCallback(() => {
+    resetCarState(createMissionStartCarState(currentMission));
+  }, [currentMission, resetCarState]);
 
   const persistTrainingSessionState = useCallback((session: ReturnType<typeof createTrainingSession>) => {
     const snapshot = snapshotForTrainingSession(
@@ -445,10 +468,11 @@ export const App: React.FC = () => {
     setShowFeedbackModal(false);
     setFailReason(null);
     if (nextSession.lifecycle === 'active' && nextSession.currentAttempt) {
-      setCurrentMission(missionForTrainingAttempt(LANE_CHANGE_MISSION, nextSession.currentAttempt.direction));
-      handleResetCar();
+      const start = prepareTrainingAttemptStart(nextSession);
+      setCurrentMission(start.mission);
+      resetCarState(start.carState);
     }
-  }, [handleResetCar, pendingAttemptResult, persistTrainingSessionState, trainingSession]);
+  }, [pendingAttemptResult, persistTrainingSessionState, resetCarState, trainingSession]);
 
   const handleSelectMissionAfterFailure = useCallback(() => {
     setPendingAttemptResult(null);
@@ -559,7 +583,7 @@ export const App: React.FC = () => {
           currentMissionId={currentMission.id}
           onSelectMission={(m) => {
             setCurrentMission(m);
-            handleResetCar();
+            resetCarState(createMissionStartCarState(m));
           }}
           onClose={() => setShowMissionModal(false)}
         />
@@ -612,29 +636,30 @@ export const App: React.FC = () => {
         persistenceIssue={persistenceIssue}
         onStart={() => {
           const session = startTrainingSession(trainingSession);
-          if (!session.currentAttempt) throw new Error('첫 훈련 시도가 생성되지 않았습니다.');
-          setCurrentMission(missionForTrainingAttempt(LANE_CHANGE_MISSION, session.currentAttempt.direction));
+          const start = prepareTrainingAttemptStart(session);
+          setCurrentMission(start.mission);
           setTrainingSession(session);
           setResumableSession(null);
           persistTrainingSessionState(session);
-          handleResetCar();
+          resetCarState(start.carState);
         }}
         onResume={() => {
           if (!resumableSession) throw new Error('이어갈 훈련 세션이 없습니다.');
           setTrainingSession(resumableSession);
           setResumableSession(null);
           if (resumableSession.lifecycle === 'active' && resumableSession.currentAttempt) {
-            setCurrentMission(missionForTrainingAttempt(LANE_CHANGE_MISSION, resumableSession.currentAttempt.direction));
+            const start = prepareTrainingAttemptStart(resumableSession);
+            setCurrentMission(start.mission);
+            resetCarState(start.carState);
           }
-          handleResetCar();
         }}
         onBeginPostAssessment={() => {
           const session = beginPostAssessment(trainingSession);
-          if (!session.currentAttempt) throw new Error('사후 평가 시도가 생성되지 않았습니다.');
-          setCurrentMission(missionForTrainingAttempt(LANE_CHANGE_MISSION, session.currentAttempt.direction));
+          const start = prepareTrainingAttemptStart(session);
+          setCurrentMission(start.mission);
           setTrainingSession(session);
           persistTrainingSessionState(session);
-          handleResetCar();
+          resetCarState(start.carState);
         }}
         onRestart={() => {
           const session = createTrainingSession();

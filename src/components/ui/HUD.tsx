@@ -213,9 +213,9 @@ export const HUD: React.FC<HUDProps> = ({
       </div>
 
       {/* 4. Bottom Section: Left-Hand Controls + Large Steering Wheel + Speedometer Cluster */}
-      <div className="flex flex-col lg:flex-row justify-between items-end gap-3 pb-1">
+      <div className="relative grid grid-cols-1 items-end gap-3 pb-1 lg:grid-cols-[1fr_auto_1fr]">
         {/* Left: Left-Hand Keyboard Control Guide (No Key Overlaps) */}
-        {showGuidance && <div className="hidden lg:block glass-panel p-3 rounded-2xl border border-slate-800 shadow-2xl pointer-events-auto space-y-2 max-w-xs sm:max-w-sm backdrop-blur-xl">
+        <div className="hidden lg:block glass-panel p-3 rounded-2xl border border-slate-800 shadow-2xl pointer-events-auto space-y-2 max-w-xs sm:max-w-sm backdrop-blur-xl">
           <div className="flex justify-between items-center text-[10px] font-black text-slate-400 pb-1 border-b border-slate-800">
             <span className="text-cyan-400 flex items-center gap-1">
               <Activity className="w-3 h-3" />
@@ -269,10 +269,10 @@ export const HUD: React.FC<HUDProps> = ({
               <span className={`px-1.5 py-0.5 rounded-lg font-mono font-black text-[10px] transition ${inputs.lookRight ? 'bg-cyan-400 text-slate-950 shadow-md' : 'bg-slate-800 text-slate-300'}`}>E 우미러</span>
             </div>
           </div>
-        </div>}
+        </div>
 
         {/* Center: Large Luxury Steering Wheel (Prominently Displayed & Controlled by Mouse) */}
-        <div className="hidden lg:block">
+        <div className="hidden lg:col-start-2 lg:block">
           <LargeSteeringWheel
             steeringWheelDegrees={carState.steeringWheelDegrees}
             steeringWheelTurns={carState.steeringWheelTurns}
@@ -282,7 +282,7 @@ export const HUD: React.FC<HUDProps> = ({
         </div>
 
         {/* Right: Digital Speedometer Cluster & Helper Toggles */}
-        <div className={`absolute ${mobileSpeedPosition} flex flex-col items-end gap-2 pointer-events-auto lg:static lg:translate-x-0`}>
+        <div className={`absolute ${mobileSpeedPosition} flex flex-col items-end gap-2 pointer-events-auto lg:static lg:col-start-3 lg:row-start-1 lg:justify-self-end lg:translate-x-0`}>
           {/* Speedometer Cluster */}
           <div className="glass-panel-glow rounded-3xl px-5 py-3 flex items-center gap-4 shadow-2xl border border-cyan-500/40 backdrop-blur-2xl">
             <div

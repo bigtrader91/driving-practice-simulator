@@ -43,7 +43,7 @@ export const buildTrackScene = (mission: Mission, createParkedVehicle: CreatePar
   const skyDome = SkyEnvironment.createSkyDome();
   group.add(skyDome);
 
-  const cityHorizon = SkyEnvironment.createCityHorizon();
+  const cityHorizon = SkyEnvironment.createCityHorizon(mission.visualVariant);
   group.add(cityHorizon);
 
   // Load asphalt texture with high tiling
@@ -118,7 +118,12 @@ export const buildTrackScene = (mission: Mission, createParkedVehicle: CreatePar
   };
 
   // Helper: Create a realistic streetlight post with glowing bulb
-  const createStreetLight = (x: number, z: number, isRightSide: boolean) => {
+  const createStreetLight = (
+    x: number,
+    z: number,
+    isRightSide: boolean,
+    parent: THREE.Object3D = group,
+  ) => {
     const lightG = new THREE.Group();
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.14, 8, 12), guardrailMat);
     pole.position.set(0, 4, 0);
@@ -136,11 +141,11 @@ export const buildTrackScene = (mission: Mission, createParkedVehicle: CreatePar
     lightG.add(arm);
     lightG.add(bulb);
     lightG.position.set(x, 0, z);
-    group.add(lightG);
+    parent.add(lightG);
   };
 
   // Helper: Create a roadside tree
-  const createTree = (x: number, z: number) => {
+  const createTree = (x: number, z: number, parent: THREE.Object3D = group) => {
     const treeG = new THREE.Group();
     const trunkMat = new THREE.MeshStandardMaterial({ color: 0x582f0e, roughness: 0.9 });
     const leafMat = new THREE.MeshStandardMaterial({ color: 0x2d6a4f, roughness: 0.8 });
@@ -153,20 +158,27 @@ export const buildTrackScene = (mission: Mission, createParkedVehicle: CreatePar
     treeG.add(trunk);
     treeG.add(leaves);
     treeG.position.set(x, 0, z);
-    group.add(treeG);
+    parent.add(treeG);
   };
 
   // Helper: Create high-rise city skyscrapers along the road
-  const createSkyscraper = (x: number, z: number, w: number, d: number, h: number) => {
+  const createSkyscraper = (
+    x: number,
+    z: number,
+    w: number,
+    d: number,
+    h: number,
+    parent: THREE.Object3D = group,
+  ) => {
     const bMesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), buildingMat);
     bMesh.position.set(x, h / 2, z);
     bMesh.castShadow = true;
     bMesh.receiveShadow = true;
-    group.add(bMesh);
+    parent.add(bMesh);
 
     const roofBox = new THREE.Mesh(new THREE.BoxGeometry(w * 0.4, 1.8, d * 0.4), guardrailMat);
     roofBox.position.set(x, h + 0.9, z);
-    group.add(roofBox);
+    parent.add(roofBox);
   };
 
   // Helper: Create a parked obstacle car
@@ -735,6 +747,38 @@ export const buildTrackScene = (mission: Mission, createParkedVehicle: CreatePar
       group.add(curb);
       obstacles.push({ type: 'box', x: cx, z: 0, width: 0.4, depth: 320, name: '도로변 보도블록', isPenaltyTrigger: true });
     });
+
+    const visualVariant = Math.max(0, Math.trunc(mission.visualVariant ?? 0));
+    const sceneryStyle = visualVariant % 3;
+    const scenery = new THREE.Group();
+    scenery.name = 'LANE_CHANGE_SCENERY';
+    group.add(scenery);
+
+    for (let index = 0; index < 6; index += 1) {
+      const z = 135 - index * 52 + ((visualVariant * 7 + index * 3) % 13) - 6;
+      const leftHeight = 22 + ((visualVariant * 11 + index * 7) % 24);
+      const rightHeight = 24 + ((visualVariant * 13 + index * 5) % 26);
+      const leftX = -25 - ((visualVariant + index) % 3) * 3;
+      const rightX = 25 + ((visualVariant * 2 + index) % 3) * 3;
+
+      if (sceneryStyle === 0 || (sceneryStyle === 1 && index % 3 === 0)) {
+        createSkyscraper(leftX, z, 13, 20, leftHeight, scenery);
+        createSkyscraper(rightX, z - 12, 13, 20, rightHeight, scenery);
+      } else if (sceneryStyle === 2) {
+        const buildingX = index % 2 === 0 ? leftX : rightX;
+        const buildingZ = index % 2 === 0 ? z : z - 12;
+        const buildingHeight = index % 2 === 0 ? leftHeight : rightHeight;
+        createSkyscraper(buildingX, buildingZ, 13, 20, buildingHeight, scenery);
+      }
+      createTree(-16 - ((visualVariant + index) % 2), z - 18, scenery);
+      createTree(16 + ((visualVariant + index + 1) % 2), z + 12, scenery);
+      if (sceneryStyle === 1) {
+        createTree(-21, z + 4, scenery);
+        createTree(21, z - 7, scenery);
+      }
+      createStreetLight(-13.2, z + 5, false, scenery);
+      createStreetLight(13.2, z - 21, true, scenery);
+    }
   }
 
   return {

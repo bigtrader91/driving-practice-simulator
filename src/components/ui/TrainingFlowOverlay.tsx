@@ -58,7 +58,7 @@ export const TrainingFlowOverlay: React.FC<TrainingFlowOverlayProps> = ({
   if (session.lifecycle === 'active' && session.currentAttempt) {
     const attempt = session.currentAttempt;
     return (
-      <aside className="absolute left-1/2 top-3 z-40 -translate-x-1/2 rounded-2xl border border-cyan-400/50 bg-slate-950/90 px-4 py-2 text-center shadow-2xl backdrop-blur-xl">
+      <aside className="absolute left-1/2 top-28 z-40 -translate-x-1/2 rounded-2xl border border-cyan-400/50 bg-slate-950/90 px-4 py-2 text-center shadow-2xl backdrop-blur-xl">
         <div className="text-[10px] font-black uppercase tracking-widest text-cyan-400">
           {phaseLabels[attempt.phase]} · {session.results.length + 1}/10
         </div>

@@ -35,7 +35,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   return (
     <>
       {/* Floating Utility Toolbar (Top Center-Right or Bottom) */}
-      <div className="absolute top-4 right-44 hidden md:flex items-center gap-2 z-20 pointer-events-auto">
+      <div className="absolute top-36 right-3 hidden flex-col items-end gap-2 z-20 pointer-events-auto md:flex xl:top-4 xl:right-44 xl:flex-row xl:items-center">
         <button
           onClick={onOpenMissions}
           disabled={missionChangeDisabled}
