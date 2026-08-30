@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">DrivePrep 3D</title>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="#0f172a"/>
+  <path fill="#f8fafc" d="M15 13h17c12 0 21 8.5 21 19 0 7-4 13-10 16l-4-7c4-2 6-5 6-9 0-6-5-11-13-11h-9v10l-8 16V13Z"/>
+  <path fill="#3b82f6" d="M29 49h6l-1-9h-4l-1 9Zm1.5-13h3l-.5-6h-2l-.5 6Z"/>
+</svg>

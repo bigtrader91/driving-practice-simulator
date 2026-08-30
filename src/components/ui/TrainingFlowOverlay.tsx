@@ -14,6 +14,7 @@ import type {
   CompletedTrainingRecord,
   TrainingPersistenceIssue,
 } from '../../simulation/TrainingSessionPersistence';
+import { BrandLogo } from './BrandLogo';
 
 interface TrainingFlowOverlayProps {
   session: TrainingSession;
@@ -173,6 +174,9 @@ const TrainingCard: React.FC<TrainingCardProps> = ({
 }) => (
   <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/90 p-4 backdrop-blur-lg">
     <section className="glass-panel-glow w-full max-w-xl space-y-5 rounded-3xl border border-slate-700 p-7 text-center shadow-2xl">
+      <div className="flex justify-center">
+        <BrandLogo />
+      </div>
       <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-slate-700 bg-slate-900">
         {icon}
       </div>

@@ -37,6 +37,11 @@ const renderHud = (showGuidance: boolean) =>
   );
 
 describe('HUD guidance', () => {
+  it('안내 모드와 무관하게 DrivePrep 3D 브랜드를 표시한다', () => {
+    expect(renderHud(false)).toContain('DrivePrep 3D');
+    expect(renderHud(true)).toContain('DrivePrep 3D');
+  });
+
   it('무안내 시도에서도 기본 조작표는 유지하고 절차 안내와 보조선 토글은 숨긴다', () => {
     const unguided = renderHud(false);
     expect(unguided).not.toContain('6. 시내 도로 &amp; 미러 확인 차선 변경');

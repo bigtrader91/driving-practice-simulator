@@ -28,6 +28,7 @@ import {
   Sliders,
 } from 'lucide-react';
 import { LargeSteeringWheel } from './LargeSteeringWheel';
+import { BrandLogo } from './BrandLogo';
 
 interface HUDProps {
   vehicle: VehicleConfig;
@@ -88,23 +89,29 @@ export const HUD: React.FC<HUDProps> = ({
     <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-3 sm:p-4 select-none z-10">
       {/* 1. Top Section - Under Mirrors (Zero Overlaps) */}
       <div className="flex justify-between items-start pt-24 sm:pt-28 gap-4">
-        {/* Mission Info Card */}
-        {showGuidance && <div className="glass-panel rounded-2xl p-3 max-w-sm pointer-events-auto border-l-4 border-l-cyan-400 shadow-2xl backdrop-blur-xl">
-          <div className="flex items-center gap-2">
-            <span className="bg-cyan-500/20 text-cyan-400 text-[10px] font-black px-2 py-0.5 rounded-full border border-cyan-500/30">
-              {mission.difficulty}
-            </span>
-            <h2 className="text-xs sm:text-sm font-black text-white tracking-tight truncate">
-              {mission.title}
-            </h2>
-          </div>
-          <p className="text-[11px] text-slate-300 mt-1 line-clamp-2 leading-relaxed">{mission.subtitle}</p>
+        <div className="flex flex-col items-start gap-2">
+          <BrandLogo />
 
-          <div className="text-[10px] text-amber-200 bg-amber-950/50 border border-amber-500/30 px-2 py-1 rounded-xl mt-1.5 flex items-start gap-1">
-            <span className="shrink-0 font-bold">💡 팁:</span>
-            <span className="truncate">{mission.tip.replace('💡 팁: ', '').replace('💡 실전 팁: ', '')}</span>
-          </div>
-        </div>}
+          {/* Mission Info Card */}
+          {showGuidance && (
+            <div className="glass-panel rounded-2xl p-3 max-w-sm pointer-events-auto border-l-4 border-l-cyan-400 shadow-2xl backdrop-blur-xl">
+              <div className="flex items-center gap-2">
+                <span className="bg-cyan-500/20 text-cyan-400 text-[10px] font-black px-2 py-0.5 rounded-full border border-cyan-500/30">
+                  {mission.difficulty}
+                </span>
+                <h2 className="text-xs sm:text-sm font-black text-white tracking-tight truncate">
+                  {mission.title}
+                </h2>
+              </div>
+              <p className="text-[11px] text-slate-300 mt-1 line-clamp-2 leading-relaxed">{mission.subtitle}</p>
+
+              <div className="text-[10px] text-amber-200 bg-amber-950/50 border border-amber-500/30 px-2 py-1 rounded-xl mt-1.5 flex items-start gap-1">
+                <span className="shrink-0 font-bold">💡 팁:</span>
+                <span className="truncate">{mission.tip.replace('💡 팁: ', '').replace('💡 실전 팁: ', '')}</span>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Safety Score & Camera Switcher */}
         <div className="flex flex-col items-end gap-1.5 pointer-events-auto">

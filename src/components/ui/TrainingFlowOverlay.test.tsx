@@ -39,6 +39,10 @@ const renderFlow = (
 };
 
 describe('TrainingFlowOverlay', () => {
+  it('첫 훈련 화면에 DrivePrep 3D 브랜드를 표시한다', () => {
+    expect(renderFlow(createTrainingSession())).toContain('DrivePrep 3D');
+  });
+
   it('진행 중인 단계 카드를 룸미러 아래에 배치한다', () => {
     const session = startTrainingSession(createTrainingSession());
 
