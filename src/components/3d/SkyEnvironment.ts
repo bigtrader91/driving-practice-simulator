@@ -51,9 +51,14 @@ export class SkyEnvironment {
   }
 
   // Distant City Horizon Silhouette
-  public static createCityHorizon(): THREE.Group {
+  public static createCityHorizon(visualVariant = 0): THREE.Group {
     const horizonGroup = new THREE.Group();
     const buildingMat = new THREE.MeshBasicMaterial({ color: 0x475569, fog: true });
+    let randomState = (Math.trunc(visualVariant) + 1) >>> 0;
+    const random = () => {
+      randomState = (randomState * 1664525 + 1013904223) >>> 0;
+      return randomState / 0x100000000;
+    };
 
     // Ring of distant skyscrapers 400m away
     const numBuildings = 48;
@@ -64,9 +69,9 @@ export class SkyEnvironment {
       const x = Math.sin(angle) * radius;
       const z = Math.cos(angle) * radius;
 
-      const bw = 25 + Math.random() * 30;
-      const bh = 50 + Math.random() * 80;
-      const bd = 25 + Math.random() * 30;
+      const bw = 25 + random() * 30;
+      const bh = 50 + random() * 80;
+      const bd = 25 + random() * 30;
 
       const bMesh = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), buildingMat);
       bMesh.position.set(x, bh / 2 - 5, z);

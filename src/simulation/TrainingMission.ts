@@ -3,9 +3,11 @@ import { TrainingDirection } from './TrainingSession';
 
 export function missionForTrainingAttempt(
   baseMission: Mission,
-  direction: TrainingDirection
+  direction: TrainingDirection,
+  visualVariant = 0,
 ): Mission {
-  if (direction === 'free') return baseMission;
+  const variantMission = { ...baseMission, visualVariant };
+  if (direction === 'free') return variantMission;
   if (!baseMission.targetArea) {
     throw new Error('차선 변경 훈련에는 목표 차로가 필요합니다.');
   }
@@ -15,7 +17,7 @@ export function missionForTrainingAttempt(
   const targetLaneX = isLeft ? 2 : 6;
 
   return {
-    ...baseMission,
+    ...variantMission,
     startPos: [startLaneX, baseMission.startPos[1], baseMission.startPos[2]],
     targetArea: {
       ...baseMission.targetArea,

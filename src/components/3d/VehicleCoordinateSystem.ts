@@ -31,6 +31,15 @@ export const getOrbitVehicleHeading = (angle: number, direction: 1 | -1): number
 
 export const getVisualWheelSteerRotation = (steerAngle: number): number => -steerAngle;
 
+export const orientCameraToward = (
+  camera: THREE.Camera,
+  target: THREE.Vector3,
+  localRoll = 0,
+): void => {
+  camera.lookAt(target);
+  camera.rotateZ(localRoll);
+};
+
 export type MirrorView = 'left' | 'right' | 'rear';
 
 export const getMirrorDirection = (heading: number, view: MirrorView): THREE.Vector3 => {

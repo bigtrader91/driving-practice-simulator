@@ -84,3 +84,54 @@ describe('buildTrackScene parked vehicles', () => {
     ]);
   });
 });
+
+describe('buildTrackScene lane-change visual variants', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('도로 판정 조건은 유지하면서 시도별 도로변 배치를 결정적으로 바꾼다', () => {
+    vi.spyOn(THREE.TextureLoader.prototype, 'load').mockReturnValue(new THREE.Texture());
+    vi.spyOn(RoadTextureGenerator, 'createSchoolZoneTexture')
+      .mockReturnValue(new THREE.Texture() as THREE.CanvasTexture);
+    vi.spyOn(RoadTextureGenerator, 'createDiamondMarkerTexture')
+      .mockReturnValue(new THREE.Texture() as THREE.CanvasTexture);
+    const baseMission = MISSIONS.find(({ id }) => id === 'city_lane_change');
+    expect(baseMission).toBeDefined();
+
+    const first = buildTrackScene(
+      { ...baseMission!, visualVariant: 0 },
+      () => new THREE.Group(),
+    );
+    const second = buildTrackScene(
+      { ...baseMission!, visualVariant: 1 },
+      () => new THREE.Group(),
+    );
+    const repeat = buildTrackScene(
+      { ...baseMission!, visualVariant: 1 },
+      () => new THREE.Group(),
+    );
+    const snapshot = (trackGroup: THREE.Group) => {
+      const scenery = trackGroup.getObjectByName('LANE_CHANGE_SCENERY');
+      expect(scenery).toBeDefined();
+      return scenery!.children.map(({ name, position, scale }) => ({
+        name,
+        x: position.x,
+        z: position.z,
+        scaleY: scale.y,
+      }));
+    };
+
+    expect(snapshot(first.trackGroup)).not.toEqual(snapshot(second.trackGroup));
+    expect(snapshot(first.trackGroup)).not.toHaveLength(snapshot(second.trackGroup).length);
+    expect(snapshot(second.trackGroup)).toEqual(snapshot(repeat.trackGroup));
+    expect(first.obstacles).toEqual(second.obstacles);
+    expect([
+      first.goalMesh?.position.x,
+      first.goalMesh?.position.z,
+    ]).toEqual([
+      second.goalMesh?.position.x,
+      second.goalMesh?.position.z,
+    ]);
+  });
+});
