@@ -3,6 +3,28 @@ import { describe, expect, it } from 'vitest';
 import { ControlHelp, ControlPanel } from './ControlPanel';
 
 describe('ControlPanel', () => {
+  it('1280px 미만에서는 우측 미러 아래 세로 도구 모음을 사용한다', () => {
+    const html = renderToStaticMarkup(
+      <ControlPanel
+        onOpenMissions={() => undefined}
+        onOpenVehicles={() => undefined}
+        onResetCar={() => undefined}
+        isMuted={false}
+        onToggleMute={() => undefined}
+        onGearSelect={() => undefined}
+        currentGear="D"
+        missionChangeDisabled
+        vehicleChangeDisabled
+        resetDisabled
+        guidanceDisabled
+      />
+    );
+
+    expect(html).toContain('top-36 right-3');
+    expect(html).toContain('flex-col');
+    expect(html).toContain('xl:top-4 xl:right-44 xl:flex-row');
+  });
+
   it('활성 무안내 시도에서는 코스 변경과 조작법 안내를 잠근다', () => {
     const html = renderToStaticMarkup(
       <ControlPanel

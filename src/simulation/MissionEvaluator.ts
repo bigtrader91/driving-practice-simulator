@@ -21,6 +21,7 @@ export interface EvalResult {
 }
 
 const THROTTLE_MS = 3000;
+const MIRROR_CHECK_VALID_MS = 5000;
 const HIGHWAY_LANE_WIDTH = 3.6;
 
 const inBounds = (
@@ -43,6 +44,8 @@ export class MissionEvaluator {
   private processedEntries = new Set<string>();
   private rearGaps = new Map<string, number>();
   private currentLane?: number;
+  private lastLeftMirrorCheckAt?: number;
+  private lastRightMirrorCheckAt?: number;
   private failed = false;
   private failMessage?: string;
   private seq = 0;
@@ -116,10 +119,15 @@ export class MissionEvaluator {
 
   /** 기존 SimulationCanvas 판정 조건을 이관하고 미션별 objective 감점을 적용한다. */
   private checkSignalAndMirror(car: CarState): void {
+    const checkedAt = this.now();
+    if (car.leftMirrorLooked) this.lastLeftMirrorCheckAt = checkedAt;
+    if (car.rightMirrorLooked) this.lastRightMirrorCheckAt = checkedAt;
     if (!(Math.abs(car.steerAngle) > 0.12 && Math.abs(car.speed) > 15)) return;
     const left = car.steerAngle < 0;
     const correctSignal = left ? car.turnSignal === 'left' : car.turnSignal === 'right';
-    const correctMirror = left ? car.leftMirrorLooked : car.rightMirrorLooked;
+    const lastMirrorCheckAt = left ? this.lastLeftMirrorCheckAt : this.lastRightMirrorCheckAt;
+    const mirrorCheckAge = lastMirrorCheckAt === undefined ? Infinity : checkedAt - lastMirrorCheckAt;
+    const correctMirror = mirrorCheckAge >= 0 && mirrorCheckAge <= MIRROR_CHECK_VALID_MS;
     const signalObjectiveId = ['signal_check', 'signal_before_change'].find((id) =>
       this.mission.objectives.some((objective) => objective.id === id),
     );
