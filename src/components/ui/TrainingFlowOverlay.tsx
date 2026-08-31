@@ -59,12 +59,17 @@ export const TrainingFlowOverlay: React.FC<TrainingFlowOverlayProps> = ({
   if (session.lifecycle === 'active' && session.currentAttempt) {
     const attempt = session.currentAttempt;
     return (
-      <aside className="absolute left-1/2 top-28 z-40 -translate-x-1/2 rounded-2xl border border-cyan-400/50 bg-slate-950/90 px-4 py-2 text-center shadow-2xl backdrop-blur-xl">
-        <div className="text-[10px] font-black uppercase tracking-widest text-cyan-400">
-          {phaseLabels[attempt.phase]} · {session.results.length + 1}/10
+      <aside
+        data-hud-overlay="training-phase"
+        className="absolute left-3 top-44 z-40 w-64 rounded-xl border border-cyan-400/50 bg-slate-950/90 px-3 py-1.5 text-center shadow-2xl backdrop-blur-xl portrait:w-60 lg:left-1/2 lg:top-28 lg:w-auto lg:max-w-none lg:-translate-x-1/2 lg:rounded-2xl lg:px-4 lg:py-2"
+      >
+        <div className="flex items-center justify-center gap-2 lg:block">
+          <div className="text-[9px] font-black uppercase tracking-widest text-cyan-400 lg:text-[10px]">
+            {phaseLabels[attempt.phase]} · {session.results.length + 1}/10
+          </div>
+          <div className="text-[10px] font-black text-white lg:text-sm">{directionLabels[attempt.direction]}</div>
         </div>
-        <div className="text-sm font-black text-white">{directionLabels[attempt.direction]}</div>
-        <div className="text-[10px] text-slate-300">
+        <div className="truncate text-[9px] text-slate-300 lg:text-[10px]">
           {attempt.scored ? (attempt.guidance ? '안내를 따라 안전 절차를 연습하세요.' : '안내 없이 평소처럼 수행하세요.') : '점수에 반영되지 않는 조작 적응입니다.'}
         </div>
         {persistenceWarning}

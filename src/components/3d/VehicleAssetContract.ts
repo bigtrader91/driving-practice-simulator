@@ -5,6 +5,9 @@ export type VehicleAssetKind = VehicleType | 'truck' | 'traffic-compact';
 
 export interface BoundVehicleAsset {
   group: THREE.Group;
+  exteriorRoot?: THREE.Object3D;
+  cockpitRoot?: THREE.Object3D;
+  driverEye?: THREE.Object3D;
   bodyMeshes: THREE.Mesh[];
   frontLeftWheel: THREE.Object3D;
   frontRightWheel: THREE.Object3D;
@@ -36,6 +39,7 @@ const meshNames = [
 
 const objectNames = ['BODY', 'WHEEL_FL', 'WHEEL_FR', 'WHEEL_RL', 'WHEEL_RR'] as const;
 const playerObjectNames = ['STEERING_WHEEL', 'WIPER_L', 'WIPER_R'] as const;
+const referenceSedanNames = ['EXTERIOR_ROOT', 'COCKPIT_ROOT', 'DRIVER_EYE'] as const;
 const mutableMaterialNames = new Set(['PAINT', 'HEADLIGHT', 'BRAKE', 'BLINKER']);
 
 const requiresPlayerControls = (kind: VehicleAssetKind) => (
@@ -69,6 +73,12 @@ export const bindVehicleAsset = (
     return [name, object];
   })) as Record<(typeof playerObjectNames)[number], THREE.Object3D | undefined>;
 
+  const referenceObjects = Object.fromEntries(referenceSedanNames.map((name) => {
+    const object = root.getObjectByName(name);
+    if (kind === 'sedan' && !object) missing.push(name);
+    return [name, object];
+  })) as Record<(typeof referenceSedanNames)[number], THREE.Object3D | undefined>;
+
   const bodyMeshes: THREE.Mesh[] = [];
   root.traverse((object) => {
     if (!isMesh(object)) return;
@@ -83,6 +93,9 @@ export const bindVehicleAsset = (
 
   return {
     group: root,
+    exteriorRoot: referenceObjects.EXTERIOR_ROOT,
+    cockpitRoot: referenceObjects.COCKPIT_ROOT,
+    driverEye: referenceObjects.DRIVER_EYE,
     bodyMeshes,
     frontLeftWheel: objects.WHEEL_FL!,
     frontRightWheel: objects.WHEEL_FR!,

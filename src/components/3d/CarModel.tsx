@@ -4,6 +4,9 @@ import type { BoundVehicleAsset } from './VehicleAssetContract';
 
 export interface Car3DHandles {
   carGroup: THREE.Group;
+  exteriorRoot?: THREE.Object3D;
+  cockpitRoot?: THREE.Object3D;
+  driverEye?: THREE.Object3D;
   frontLeftWheel: THREE.Object3D;
   frontRightWheel: THREE.Object3D;
   rearLeftWheel: THREE.Object3D;
@@ -48,12 +51,31 @@ export const createCar3DGroup = (
     throw new Error(`${vehicle.id} player vehicle asset is missing cockpit controls`);
   }
 
+  if (vehicle.id === 'sedan') {
+    const missingRenderHandles = [
+      ['exteriorRoot', asset.exteriorRoot],
+      ['cockpitRoot', asset.cockpitRoot],
+      ['driverEye', asset.driverEye],
+    ]
+      .filter(([, handle]) => !handle)
+      .map(([name]) => name);
+
+    if (missingRenderHandles.length > 0) {
+      throw new Error(
+        `sedan player vehicle asset is missing render handles: ${missingRenderHandles.join(', ')}`,
+      );
+    }
+  }
+
   const carGroup = asset.group;
   carGroup.name = `PLAYER_VEHICLE_${vehicle.id.toUpperCase()}`;
   enableShadows(carGroup);
 
   return {
     carGroup,
+    exteriorRoot: asset.exteriorRoot,
+    cockpitRoot: asset.cockpitRoot,
+    driverEye: asset.driverEye,
     frontLeftWheel: asset.frontLeftWheel,
     frontRightWheel: asset.frontRightWheel,
     rearLeftWheel: asset.rearLeftWheel,

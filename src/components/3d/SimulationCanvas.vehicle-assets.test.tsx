@@ -10,6 +10,7 @@ import {
   createCompletionSafeCleanup,
   preloadSimulationVehicleAssets,
 } from './SimulationCanvas';
+import { ENVIRONMENT_QUALITY } from './EnvironmentQuality';
 
 const hookHarness = vi.hoisted(() => {
   type Slot = { value?: unknown; current?: unknown };
@@ -67,13 +68,26 @@ const hookHarness = vi.hoisted(() => {
 const runtimeMocks = vi.hoisted(() => ({
   loadLibrary: vi.fn(),
   buildTrack: vi.fn(),
+  trackDispose: vi.fn(),
   createVisual: vi.fn(),
   syncVisual: vi.fn(),
   disposeVisual: vi.fn(),
-  rendererInstances: [] as Array<{ dispose: ReturnType<typeof vi.fn> }>,
+  rendererInstances: [] as Array<{
+    dispose: ReturnType<typeof vi.fn>;
+    setSize: ReturnType<typeof vi.fn>;
+    setPixelRatio: ReturnType<typeof vi.fn>;
+  }>,
   animationCallbacks: [] as FrameRequestCallback[],
   playerGroup: null as THREE.Group | null,
+  playerExteriorRoot: null as THREE.Group | null,
+  playerCockpitRoot: null as THREE.Group | null,
+  playerDriverEye: null as THREE.Object3D | null,
   renderedPlayerGroupVisibility: [] as boolean[],
+  renderedVehicleModes: [] as Array<{ exterior: boolean; cockpit: boolean }>,
+  renderedCameraPositions: [] as THREE.Vector3[],
+  renderedShadowMapSizes: [] as Array<{ width: number; height: number }>,
+  renderInvocationCount: 0,
+  throwOnRender: null as number | null,
 }));
 
 vi.mock('react', async (importOriginal) => {
@@ -96,9 +110,25 @@ vi.mock('three', async (importOriginal) => {
     toneMappingExposure = 0;
     setSize = vi.fn();
     setPixelRatio = vi.fn();
-    render = vi.fn(() => {
+    render = vi.fn((scene: THREE.Scene, camera: THREE.Camera) => {
+      runtimeMocks.renderInvocationCount += 1;
       if (runtimeMocks.playerGroup) {
         runtimeMocks.renderedPlayerGroupVisibility.push(runtimeMocks.playerGroup.visible);
+      }
+      runtimeMocks.renderedVehicleModes.push({
+        exterior: runtimeMocks.playerExteriorRoot?.visible ?? true,
+        cockpit: runtimeMocks.playerCockpitRoot?.visible ?? true,
+      });
+      runtimeMocks.renderedCameraPositions.push(camera.position.clone());
+      const sun = scene.children.find(({ type }) => type === 'DirectionalLight') as THREE.DirectionalLight | undefined;
+      if (sun) {
+        runtimeMocks.renderedShadowMapSizes.push({
+          width: sun.shadow.mapSize.width,
+          height: sun.shadow.mapSize.height,
+        });
+      }
+      if (runtimeMocks.throwOnRender === runtimeMocks.renderInvocationCount) {
+        throw new Error('render failed');
       }
     });
     dispose = vi.fn();
@@ -133,18 +163,30 @@ vi.mock('./TrafficVehicleVisual', async (importOriginal) => {
 vi.mock('./CarModel', () => ({
   createCar3DGroup: () => {
     const carGroup = new THREE.Group();
+    const exteriorRoot = new THREE.Group();
+    const cockpitRoot = new THREE.Group();
+    const driverEye = new THREE.Object3D();
+    driverEye.position.set(0.75, 1.9, -0.8);
+    cockpitRoot.add(driverEye);
+    carGroup.add(exteriorRoot, cockpitRoot);
     const body = new THREE.Mesh(
       new THREE.BoxGeometry(1, 1, 1),
       new THREE.MeshStandardMaterial(),
     );
-    carGroup.add(body);
+    exteriorRoot.add(body);
     runtimeMocks.playerGroup = carGroup;
+    runtimeMocks.playerExteriorRoot = exteriorRoot;
+    runtimeMocks.playerCockpitRoot = cockpitRoot;
+    runtimeMocks.playerDriverEye = driverEye;
     const makeLight = () => new THREE.Mesh(
       new THREE.BoxGeometry(1, 1, 1),
       new THREE.MeshStandardMaterial(),
     );
     return {
       carGroup,
+      exteriorRoot,
+      cockpitRoot,
+      driverEye,
       steeringWheelMesh: new THREE.Group(),
       frontLeftWheel: new THREE.Group(),
       frontRightWheel: new THREE.Group(),
@@ -360,6 +402,8 @@ const missionFixture: Mission = {
   objectives: [],
 };
 
+type SimulationCanvasTestProps = Parameters<typeof SimulationCanvas>[0];
+
 const makeInputs = (): ControlInputs => ({
   forward: false,
   backward: false,
@@ -464,7 +508,7 @@ const trafficFixture = () => [
   }),
 ];
 
-const makeComponentProps = () => ({
+const makeComponentProps = (): SimulationCanvasTestProps => ({
   vehicle: vehicleFixture,
   mission: missionFixture,
   cameraMode: 'cockpit' as const,
@@ -486,7 +530,7 @@ const container = {
   replaceChildren: vi.fn(),
 };
 
-const renderComponent = (props = makeComponentProps()) => {
+const renderComponent = (props: SimulationCanvasTestProps = makeComponentProps()) => {
   hookHarness.beginRender();
   const element = SimulationCanvas(props) as React.ReactElement<{
     ref: React.MutableRefObject<typeof container | null>;
@@ -498,15 +542,26 @@ const renderComponent = (props = makeComponentProps()) => {
 describe('SimulationCanvas component integration', () => {
   beforeEach(() => {
     hookHarness.reset();
+    container.clientWidth = 800;
+    container.clientHeight = 600;
     runtimeMocks.loadLibrary.mockReset();
     runtimeMocks.buildTrack.mockReset();
+    runtimeMocks.trackDispose.mockClear();
     runtimeMocks.createVisual.mockClear();
     runtimeMocks.syncVisual.mockClear();
     runtimeMocks.disposeVisual.mockClear();
     runtimeMocks.rendererInstances.length = 0;
     runtimeMocks.animationCallbacks.length = 0;
     runtimeMocks.playerGroup = null;
+    runtimeMocks.playerExteriorRoot = null;
+    runtimeMocks.playerCockpitRoot = null;
+    runtimeMocks.playerDriverEye = null;
     runtimeMocks.renderedPlayerGroupVisibility.length = 0;
+    runtimeMocks.renderedVehicleModes.length = 0;
+    runtimeMocks.renderedCameraPositions.length = 0;
+    runtimeMocks.renderedShadowMapSizes.length = 0;
+    runtimeMocks.renderInvocationCount = 0;
+    runtimeMocks.throwOnRender = null;
     container.replaceChildren.mockClear();
     Object.values(soundMocks).forEach((mock) => mock.mockClear());
     trajectoryMocks.dispose.mockClear();
@@ -516,6 +571,7 @@ describe('SimulationCanvas component integration', () => {
       obstacles: [],
       initialTraffic: trafficFixture(),
       signals: [],
+      dispose: runtimeMocks.trackDispose,
     });
     vi.stubGlobal('window', {
       innerWidth: 800,
@@ -525,6 +581,7 @@ describe('SimulationCanvas component integration', () => {
       clearTimeout: vi.fn(clearTimeout),
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
+      matchMedia: vi.fn(() => ({ matches: false })),
     });
     vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => {
       runtimeMocks.animationCallbacks.push(callback);
@@ -615,12 +672,13 @@ describe('SimulationCanvas component integration', () => {
 
     hookHarness.unmount();
     expect(runtimeMocks.disposeVisual).toHaveBeenCalledTimes(4);
+    expect(runtimeMocks.trackDispose).toHaveBeenCalledOnce();
     runtimeMocks.createVisual.mock.results.forEach(({ value }) => {
       expect(runtimeMocks.disposeVisual).toHaveBeenCalledWith(value);
     });
   });
 
-  it('운전석 본화면에서만 플레이어 차량 전체를 숨기고 미러 렌더 전에 복구한다', async () => {
+  it('운전석 본화면은 cockpit만, 미러는 외부 차체만 렌더한다', async () => {
     runtimeMocks.loadLibrary.mockResolvedValue({
       createVehicle: vi.fn(() => makeBoundAsset()),
       createTrafficSedan: vi.fn(() => makeBoundAsset()),
@@ -642,13 +700,186 @@ describe('SimulationCanvas component integration', () => {
 
     runtimeMocks.animationCallbacks[0](performance.now() + 16);
 
-    expect(runtimeMocks.renderedPlayerGroupVisibility.slice(0, 4)).toEqual([
-      false,
-      true,
-      true,
-      true,
+    expect(runtimeMocks.renderedVehicleModes.slice(0, 4)).toEqual([
+      { exterior: false, cockpit: true },
+      { exterior: true, cockpit: false },
+      { exterior: true, cockpit: false },
+      { exterior: true, cockpit: false },
     ]);
     expect(runtimeMocks.playerGroup?.visible).toBe(true);
+  });
+
+  it('uses exterior and cockpit visibility for chase main and reverse backup renders', async () => {
+    runtimeMocks.loadLibrary.mockResolvedValue({
+      createVehicle: vi.fn(() => makeBoundAsset()),
+      createTrafficSedan: vi.fn(() => makeBoundAsset()),
+    });
+    const mirror = { current: {} as HTMLCanvasElement };
+    const props = {
+      ...makeComponentProps(),
+      cameraMode: 'chase' as const,
+      inputsRef: { current: { ...makeInputs(), signalLeft: false, gearR: true } },
+      backupCameraCanvasRef: mirror,
+    };
+
+    renderComponent(props);
+    hookHarness.flushEffects();
+    await Promise.resolve();
+    await Promise.resolve();
+    renderComponent(props);
+    hookHarness.flushEffects();
+
+    runtimeMocks.animationCallbacks[0](0);
+
+    expect(runtimeMocks.renderedVehicleModes.slice(0, 2)).toEqual([
+      { exterior: true, cockpit: false },
+      { exterior: true, cockpit: false },
+    ]);
+  });
+
+  it('restores exact previous root visibility when a cockpit render throws', async () => {
+    runtimeMocks.loadLibrary.mockResolvedValue({
+      createVehicle: vi.fn(() => makeBoundAsset()),
+      createTrafficSedan: vi.fn(() => makeBoundAsset()),
+    });
+    const props = makeComponentProps();
+
+    renderComponent(props);
+    hookHarness.flushEffects();
+    await Promise.resolve();
+    await Promise.resolve();
+    renderComponent(props);
+    hookHarness.flushEffects();
+
+    runtimeMocks.playerExteriorRoot!.visible = true;
+    runtimeMocks.playerCockpitRoot!.visible = false;
+    runtimeMocks.throwOnRender = 1;
+
+    expect(() => runtimeMocks.animationCallbacks[0](0)).toThrow('render failed');
+    expect(runtimeMocks.renderedVehicleModes[0]).toEqual({ exterior: false, cockpit: true });
+    expect([runtimeMocks.playerExteriorRoot!.visible, runtimeMocks.playerCockpitRoot!.visible]).toEqual([
+      true,
+      false,
+    ]);
+  });
+
+  it.each([
+    [1440, 900, false, ENVIRONMENT_QUALITY.high],
+    [844, 390, true, ENVIRONMENT_QUALITY.balanced],
+  ] as const)('selects renderer and scene quality for %sx%s coarse=%s', async (
+    width,
+    height,
+    coarsePointer,
+    expectedQuality,
+  ) => {
+    container.clientWidth = width;
+    container.clientHeight = height;
+    window.devicePixelRatio = 2;
+    window.matchMedia = vi.fn(() => ({ matches: coarsePointer })) as unknown as typeof window.matchMedia;
+    runtimeMocks.loadLibrary.mockResolvedValue({
+      createVehicle: vi.fn(() => makeBoundAsset()),
+      createTrafficSedan: vi.fn(() => makeBoundAsset()),
+    });
+
+    renderComponent();
+    hookHarness.flushEffects();
+    await Promise.resolve();
+    await Promise.resolve();
+    renderComponent();
+    hookHarness.flushEffects();
+
+    expect(runtimeMocks.rendererInstances[0].setPixelRatio).toHaveBeenCalledWith(
+      expectedQuality.pixelRatioCap,
+    );
+    expect(runtimeMocks.buildTrack).toHaveBeenCalledWith(
+      missionFixture,
+      expect.any(Function),
+      { quality: expectedQuality },
+    );
+
+    runtimeMocks.animationCallbacks[0](0);
+    expect(runtimeMocks.renderedShadowMapSizes[0]).toEqual({
+      width: expectedQuality.shadowMapSize,
+      height: expectedQuality.shadowMapSize,
+    });
+  });
+
+  it('positions the sedan cockpit camera at the transformed driver-eye world position', async () => {
+    runtimeMocks.loadLibrary.mockResolvedValue({
+      createVehicle: vi.fn(() => makeBoundAsset()),
+      createTrafficSedan: vi.fn(() => makeBoundAsset()),
+    });
+    const mission = { ...missionFixture, startPos: [10, 2, 3] as [number, number, number], startHeading: Math.PI / 2 };
+
+    renderComponent({ ...makeComponentProps(), mission });
+    hookHarness.flushEffects();
+    await Promise.resolve();
+    await Promise.resolve();
+    renderComponent({ ...makeComponentProps(), mission });
+    hookHarness.flushEffects();
+
+    runtimeMocks.animationCallbacks[0](0);
+
+    const cameraPosition = runtimeMocks.renderedCameraPositions[0];
+    expect(cameraPosition.x).toBeCloseTo(9.2, 6);
+    expect(cameraPosition.y).toBeCloseTo(3.9, 6);
+    expect(cameraPosition.z).toBeCloseTo(2.25, 6);
+  });
+
+  it('keeps mirror canvas CSS sizing separate from the WebGL drawing buffer', async () => {
+    runtimeMocks.loadLibrary.mockResolvedValue({
+      createVehicle: vi.fn(() => makeBoundAsset()),
+      createTrafficSedan: vi.fn(() => makeBoundAsset()),
+    });
+
+    const props = {
+      ...makeComponentProps(),
+      leftMirrorCanvasRef: { current: { width: 180, height: 110 } as HTMLCanvasElement },
+      rightMirrorCanvasRef: { current: { width: 180, height: 110 } as HTMLCanvasElement },
+      rearMirrorCanvasRef: { current: { width: 240, height: 75 } as HTMLCanvasElement },
+    };
+
+    renderComponent(props);
+    hookHarness.flushEffects();
+    await Promise.resolve();
+    await Promise.resolve();
+    renderComponent(props);
+    hookHarness.flushEffects();
+
+    expect(runtimeMocks.rendererInstances).toHaveLength(4);
+    runtimeMocks.rendererInstances.slice(1, 4).forEach((renderer, index) => {
+      const dimensions = index < 2 ? [180, 110, false] : [240, 75, false];
+      expect(renderer.setSize).toHaveBeenCalledWith(...dimensions);
+    });
+  });
+
+  it('surfaces a matchMedia initialization failure through the existing error overlay', async () => {
+    const failure = new Error('matchMedia unavailable');
+    runtimeMocks.loadLibrary.mockResolvedValue({
+      createVehicle: vi.fn(() => makeBoundAsset()),
+      createTrafficSedan: vi.fn(() => makeBoundAsset()),
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    renderComponent();
+    hookHarness.flushEffects();
+    await Promise.resolve();
+    await Promise.resolve();
+    window.matchMedia = vi.fn(() => { throw failure; }) as unknown as typeof window.matchMedia;
+
+    renderComponent();
+    hookHarness.flushEffects();
+    const failed = renderComponent();
+
+    expect(renderToStaticMarkup(failed)).toContain('role="alert"');
+    expect(renderToStaticMarkup(failed)).toContain(
+      'Failed to initialize driving simulation: matchMedia unavailable',
+    );
+    expect(consoleError).toHaveBeenCalledWith(
+      'Failed to initialize driving simulation: matchMedia unavailable',
+      failure,
+    );
+    consoleError.mockRestore();
   });
 
   it('shows the active load failure in the console and alert without constructing a fallback', async () => {
@@ -711,6 +942,7 @@ describe('SimulationCanvas component integration', () => {
 
     expect(renderToStaticMarkup(failed)).toContain('second visual failed');
     expect(runtimeMocks.disposeVisual).toHaveBeenCalledOnce();
+    expect(runtimeMocks.trackDispose).toHaveBeenCalledOnce();
     expect(runtimeMocks.rendererInstances).toHaveLength(5);
     runtimeMocks.rendererInstances.forEach(({ dispose }) => {
       expect(dispose).toHaveBeenCalledOnce();
@@ -746,6 +978,7 @@ describe('SimulationCanvas component integration', () => {
     expect(runtimeMocks.disposeVisual).toHaveBeenCalledTimes(4);
     expect(runtimeMocks.rendererInstances).toHaveLength(1);
     expect(runtimeMocks.rendererInstances[0].dispose).toHaveBeenCalledOnce();
+    expect(runtimeMocks.trackDispose).toHaveBeenCalledOnce();
     expect(window.setTimeout).toHaveBeenCalledWith(expect.any(Function), 1200);
     expect(window.clearTimeout).toHaveBeenCalledOnce();
     expect(soundMocks.stopEngine).toHaveBeenCalledOnce();

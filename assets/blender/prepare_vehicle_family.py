@@ -191,11 +191,12 @@ def normalize_source(dimensions: tuple[float, float, float]) -> None:
 def add_wheel_handles(kind: str, dimensions: tuple[float, float, float]) -> None:
     width, _, height = dimensions
     wheelbase = WHEELBASE[kind]
+    wheel_center_z = 0.32 if kind == "sedan" else height * 0.17
     positions = {
-        "WHEEL_FL": (-width * 0.40, wheelbase / 2, height * 0.17),
-        "WHEEL_FR": (width * 0.40, wheelbase / 2, height * 0.17),
-        "WHEEL_RL": (-width * 0.40, -wheelbase / 2, height * 0.17),
-        "WHEEL_RR": (width * 0.40, -wheelbase / 2, height * 0.17),
+        "WHEEL_FL": (-width * 0.40, wheelbase / 2, wheel_center_z),
+        "WHEEL_FR": (width * 0.40, wheelbase / 2, wheel_center_z),
+        "WHEEL_RL": (-width * 0.40, -wheelbase / 2, wheel_center_z),
+        "WHEEL_RR": (width * 0.40, -wheelbase / 2, wheel_center_z),
     }
     sources = {
         "WHEEL_FL": bpy.data.objects["SOURCE_WHEEL_FL"],
@@ -213,6 +214,156 @@ def add_wheel_handles(kind: str, dimensions: tuple[float, float, float]) -> None
             source.matrix_basis = handle.matrix_world.inverted() @ world
 
 
+def apply_bevel(obj: bpy.types.Object, width: float, segments: int = 3) -> None:
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    modifier = obj.modifiers.new(name="Edge Bevel", type="BEVEL")
+    modifier.width = width
+    modifier.segments = segments
+    modifier.limit_method = "ANGLE"
+    bpy.ops.object.modifier_apply(modifier=modifier.name)
+
+
+def parent_keep_world(obj: bpy.types.Object, parent: bpy.types.Object) -> None:
+    world = obj.matrix_world.copy()
+    obj.parent = parent
+    obj.matrix_world = world
+
+
+def add_reference_wheel(root: bpy.types.Object, radius: float, width: float) -> None:
+    center = root.matrix_world.translation.copy()
+    tire_material = material("TIRE", (0.008, 0.009, 0.011, 1.0))
+    rim_material = material("RIM", (0.42, 0.48, 0.56, 1.0))
+
+    bpy.ops.mesh.primitive_cylinder_add(
+        vertices=32,
+        radius=radius,
+        depth=width,
+        location=center,
+        rotation=(0, math.pi / 2, 0),
+    )
+    tire = bpy.context.object
+    tire.name = f"{root.name}_TIRE"
+    tire.data.materials.append(tire_material)
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
+    tire.parent = root
+    tire.matrix_parent_inverse = root.matrix_world.inverted()
+    for polygon in tire.data.polygons:
+        polygon.use_smooth = True
+
+    bpy.ops.mesh.primitive_cylinder_add(
+        vertices=32,
+        radius=radius * 0.64,
+        depth=width + 0.008,
+        location=center,
+        rotation=(0, math.pi / 2, 0),
+    )
+    rim = bpy.context.object
+    rim.name = f"{root.name}_RIM"
+    rim.data.materials.append(rim_material)
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
+    rim.parent = root
+    rim.matrix_parent_inverse = root.matrix_world.inverted()
+    for polygon in rim.data.polygons:
+        polygon.use_smooth = True
+
+
+def add_reference_wheels() -> None:
+    for name in ("WHEEL_FL", "WHEEL_FR", "WHEEL_RL", "WHEEL_RR"):
+        add_reference_wheel(bpy.data.objects[name], radius=0.32, width=0.22)
+
+
+def remove_sedan_source_wheels() -> None:
+    for name in ("SOURCE_WHEEL_FL", "SOURCE_WHEEL_FR", "SOURCE_WHEEL_REAR"):
+        source = bpy.data.objects.get(name)
+        if source is None:
+            raise ValueError(f"sedan: missing source wheel {name}")
+        bpy.data.objects.remove(source, do_unlink=True)
+
+
+def add_cylinder_between(
+    name: str,
+    start: Vector,
+    end: Vector,
+    radius: float,
+    assigned_material: bpy.types.Material,
+) -> bpy.types.Object:
+    direction = end - start
+    bpy.ops.mesh.primitive_cylinder_add(
+        vertices=12,
+        radius=radius,
+        depth=direction.length,
+        location=(start + end) / 2,
+    )
+    obj = bpy.context.object
+    obj.name = name
+    obj.rotation_mode = "QUATERNION"
+    obj.rotation_quaternion = direction.to_track_quat("Z", "Y")
+    obj.data.materials.append(assigned_material)
+    return obj
+
+
+def add_reference_cockpit() -> None:
+    exterior_root = add_empty("EXTERIOR_ROOT", (0, 0, 0))
+    cockpit_root = add_empty("COCKPIT_ROOT", (0, 0, 0))
+
+    cockpit_handles = {"STEERING_WHEEL", "WIPER_L", "WIPER_R"}
+    for obj in list(bpy.context.scene.objects):
+        if obj in {exterior_root, cockpit_root} or obj.parent is not None:
+            continue
+        parent_keep_world(obj, cockpit_root if obj.name in cockpit_handles else exterior_root)
+
+    interior = material("INTERIOR", (0.18, 0.22, 0.28, 1.0), (0.05, 0.06, 0.08))
+    dashboard = add_box("DASHBOARD", (1.08, 0.12, 0.10), (0, 0.62, 0.67), interior)
+    apply_bevel(dashboard, 0.045)
+    parent_keep_world(dashboard, cockpit_root)
+
+    instrument_hood = add_box("INSTRUMENT_HOOD", (0.44, 0.14, 0.08), (-0.40, 0.23, 0.86), interior)
+    apply_bevel(instrument_hood, 0.035)
+    parent_keep_world(instrument_hood, cockpit_root)
+
+    cockpit_hood = add_box("COCKPIT_HOOD", (1.08, 0.40, 0.05), (0, 1.12, 0.68), interior)
+    apply_bevel(cockpit_hood, 0.018)
+    parent_keep_world(cockpit_hood, cockpit_root)
+
+    for side, x in (("DRIVER", -0.40), ("PASSENGER", 0.40)):
+        seat_root = add_empty(f"SEAT_{side}", (x, -0.18, 0))
+        bpy.context.view_layer.update()
+        parent_keep_world(seat_root, cockpit_root)
+        seat_base = add_box(f"SEAT_{side}_BASE", (0.46, 0.52, 0.16), (x, -0.18, 0.39), interior)
+        apply_bevel(seat_base, 0.045)
+        parent_keep_world(seat_base, seat_root)
+        seat_back = add_box(f"SEAT_{side}_BACK", (0.46, 0.16, 0.62), (x, -0.43, 0.70), interior)
+        apply_bevel(seat_back, 0.045)
+        parent_keep_world(seat_back, seat_root)
+
+    pillar_material = material("INTERIOR_PILLAR", (0.12, 0.14, 0.18, 1.0), (0.03, 0.04, 0.06))
+    pillar_points = {
+        "INNER_A_PILLAR_L": (Vector((-0.82, 0.50, 0.69)), Vector((-0.74, 0.82, 1.30))),
+        "INNER_A_PILLAR_R": (Vector((0.82, 0.50, 0.69)), Vector((0.74, 0.82, 1.30))),
+        "INNER_B_PILLAR_L": (Vector((-0.77, -0.55, 0.69)), Vector((-0.70, -0.35, 1.30))),
+        "INNER_B_PILLAR_R": (Vector((0.77, -0.55, 0.69)), Vector((0.70, -0.35, 1.30))),
+    }
+    for name, (start, end) in pillar_points.items():
+        pillar = add_cylinder_between(name, start, end, 0.018, pillar_material)
+        parent_keep_world(pillar, cockpit_root)
+
+    driver_eye = add_empty("DRIVER_EYE", (-0.40, -0.68, 1.20))
+    bpy.context.view_layer.update()
+    parent_keep_world(driver_eye, cockpit_root)
+
+    steering = bpy.data.objects.get("STEERING_WHEEL")
+    steering_rim = bpy.data.objects.get("STEERING_WHEEL_RIM")
+    if steering is None or steering_rim is None:
+        raise ValueError("sedan: runtime steering wheel handles are missing")
+    if steering_rim.parent is not steering:
+        parent_keep_world(steering_rim, steering)
+    steering.location = (-0.40, 0.28, 0.92)
+    steering_rim.scale *= 0.80
+    bpy.context.view_layer.update()
+
+
 def add_runtime_handles(kind: str, dimensions: tuple[float, float, float], player_controls: bool) -> None:
     width, length, height = dimensions
     glass = material("GLASS", (0.08, 0.12, 0.18, 0.20))
@@ -221,7 +372,7 @@ def add_runtime_handles(kind: str, dimensions: tuple[float, float, float], playe
     headlight = material("HEADLIGHT", (1.0, 0.95, 0.78, 1.0), (1.0, 0.92, 0.7))
     brake = material("BRAKE", (0.65, 0.01, 0.01, 1.0), (0.7, 0.0, 0.0))
     blinker = material("BLINKER", (1.0, 0.28, 0.0, 1.0), (1.0, 0.18, 0.0))
-    interior = material("INTERIOR", (0.025, 0.03, 0.04, 1.0))
+    interior = material("INTERIOR", (0.32, 0.38, 0.46, 1.0), (0.10, 0.13, 0.18))
 
     add_box("GLASS_FRONT", (width * 0.72, 0.012, height * 0.30), (0, length * 0.16, height * 0.69), glass)
     add_box("GLASS_REAR", (width * 0.68, 0.012, height * 0.27), (0, -length * 0.23, height * 0.68), glass)
@@ -244,7 +395,7 @@ def add_runtime_handles(kind: str, dimensions: tuple[float, float, float], playe
     if not player_controls:
         return
 
-    steering = add_empty("STEERING_WHEEL", (-width * 0.22, length * 0.11, height * 0.56))
+    steering = add_empty("STEERING_WHEEL", (-width * 0.22, length * 0.10, height * 0.88))
     bpy.ops.mesh.primitive_torus_add(major_radius=width * 0.10, minor_radius=0.018, major_segments=32, minor_segments=8)
     rim = bpy.context.object
     rim.name = "STEERING_WHEEL_RIM"
@@ -260,7 +411,7 @@ def add_runtime_handles(kind: str, dimensions: tuple[float, float, float], playe
         blade.location = (width * 0.12, 0, 0)
 
 
-def export_glb(output: Path) -> None:
+def export_glb(output: Path, *, export_texcoords: bool = True) -> None:
     bpy.ops.object.select_all(action="SELECT")
     output.parent.mkdir(parents=True, exist_ok=True)
     bpy.ops.export_scene.gltf(
@@ -273,6 +424,7 @@ def export_glb(output: Path) -> None:
         export_lights=False,
         export_extras=False,
         export_materials="EXPORT",
+        export_texcoords=export_texcoords,
     )
 
 
@@ -289,8 +441,13 @@ def main() -> None:
         rename_source_parts(kind)
         normalize_source(source.dimensions)
         add_wheel_handles(kind, source.dimensions)
+        if kind == "sedan":
+            remove_sedan_source_wheels()
+            add_reference_wheels()
         add_runtime_handles(kind, source.dimensions, source.player_controls)
-        export_glb(output_dir / f"{kind}.glb")
+        if kind == "sedan":
+            add_reference_cockpit()
+        export_glb(output_dir / f"{kind}.glb", export_texcoords=kind != "sedan")
         print(f"PREPARED {kind} from {source_path}")
 
 

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { MISSIONS } from '../../constants/missions';
+import { ENVIRONMENT_QUALITY } from './EnvironmentQuality';
 import { RoadTextureGenerator } from './RoadTextures';
 import { buildTrackScene } from './TrackBuilder';
 
@@ -112,7 +113,7 @@ describe('buildTrackScene lane-change visual variants', () => {
       () => new THREE.Group(),
     );
     const snapshot = (trackGroup: THREE.Group) => {
-      const scenery = trackGroup.getObjectByName('LANE_CHANGE_SCENERY');
+      const scenery = trackGroup.getObjectByName('REFERENCE_CITY_SCENERY');
       expect(scenery).toBeDefined();
       return scenery!.children.map(({ name, position, scale }) => ({
         name,
@@ -123,7 +124,6 @@ describe('buildTrackScene lane-change visual variants', () => {
     };
 
     expect(snapshot(first.trackGroup)).not.toEqual(snapshot(second.trackGroup));
-    expect(snapshot(first.trackGroup)).not.toHaveLength(snapshot(second.trackGroup).length);
     expect(snapshot(second.trackGroup)).toEqual(snapshot(repeat.trackGroup));
     expect(first.obstacles).toEqual(second.obstacles);
     expect([
@@ -133,5 +133,95 @@ describe('buildTrackScene lane-change visual variants', () => {
       second.goalMesh?.position.x,
       second.goalMesh?.position.z,
     ]);
+  });
+
+  it('changes only decorative density between high and balanced quality profiles', () => {
+    vi.spyOn(THREE.TextureLoader.prototype, 'load').mockReturnValue(new THREE.Texture());
+    vi.spyOn(RoadTextureGenerator, 'createSchoolZoneTexture')
+      .mockReturnValue(new THREE.Texture() as THREE.CanvasTexture);
+    vi.spyOn(RoadTextureGenerator, 'createDiamondMarkerTexture')
+      .mockReturnValue(new THREE.Texture() as THREE.CanvasTexture);
+    const mission = MISSIONS.find(({ id }) => id === 'city_lane_change');
+    expect(mission).toBeDefined();
+
+    const high = buildTrackScene(
+      { ...mission!, visualVariant: 2 },
+      () => new THREE.Group(),
+      { quality: ENVIRONMENT_QUALITY.high },
+    );
+    const balanced = buildTrackScene(
+      { ...mission!, visualVariant: 2 },
+      () => new THREE.Group(),
+      { quality: ENVIRONMENT_QUALITY.balanced },
+    );
+
+    expect(high.trackGroup.getObjectByName('REFERENCE_CITY_SCENERY')).toBeDefined();
+    expect(balanced.trackGroup.getObjectByName('REFERENCE_CITY_SCENERY')).toBeDefined();
+    expect(high.trackGroup.getObjectByName('LANE_CHANGE_SCENERY')).toBeUndefined();
+    expect(balanced.trackGroup.getObjectByName('LANE_CHANGE_SCENERY')).toBeUndefined();
+    expect(balanced.trackGroup.getObjectByName('REFERENCE_CITY_SCENERY')!.children.length)
+      .toBeLessThan(high.trackGroup.getObjectByName('REFERENCE_CITY_SCENERY')!.children.length);
+    expect(high.obstacles).toEqual(balanced.obstacles);
+    expect([
+      high.goalMesh?.position.x,
+      high.goalMesh?.position.z,
+    ]).toEqual([
+      balanced.goalMesh?.position.x,
+      balanced.goalMesh?.position.z,
+    ]);
+    expect(high.initialTraffic).toEqual(balanced.initialTraffic);
+  });
+
+  it('disposes actual reference road and scenery resources exactly once', () => {
+    vi.spyOn(THREE.TextureLoader.prototype, 'load').mockReturnValue(new THREE.Texture());
+    vi.spyOn(RoadTextureGenerator, 'createSchoolZoneTexture')
+      .mockReturnValue(new THREE.Texture() as THREE.CanvasTexture);
+    vi.spyOn(RoadTextureGenerator, 'createDiamondMarkerTexture')
+      .mockReturnValue(new THREE.Texture() as THREE.CanvasTexture);
+    const mission = MISSIONS.find(({ id }) => id === 'city_lane_change');
+    expect(mission).toBeDefined();
+
+    const built = buildTrackScene(
+      { ...mission!, visualVariant: 2 },
+      () => new THREE.Group(),
+    );
+    const roadMaterialMesh = (() => {
+      let found: THREE.Mesh | undefined;
+      built.trackGroup.traverse((object) => {
+        if (!(object instanceof THREE.Mesh) || Array.isArray(object.material)) return;
+        if (object.material instanceof THREE.MeshStandardMaterial && object.material.alphaMap) {
+          found = object;
+        }
+      });
+      return found;
+    })();
+    const buildingShell = built.trackGroup.getObjectByName('REFERENCE_BUILDING_SHELL') as THREE.Mesh | undefined;
+
+    expect(roadMaterialMesh).toBeDefined();
+    expect(buildingShell).toBeDefined();
+    const roadMaterial = roadMaterialMesh!.material as THREE.MeshStandardMaterial;
+    const roadMaterialDispose = vi.spyOn(roadMaterial, 'dispose');
+    const roadWearDispose = vi.spyOn(roadMaterial.alphaMap!, 'dispose');
+    const sceneryGeometryDispose = vi.spyOn(buildingShell!.geometry, 'dispose');
+
+    built.dispose();
+    built.dispose();
+
+    expect(roadMaterialDispose).toHaveBeenCalledTimes(1);
+    expect(roadWearDispose).toHaveBeenCalledTimes(1);
+    expect(sceneryGeometryDispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps non-reference mission disposal safe and idempotent', () => {
+    vi.spyOn(THREE.TextureLoader.prototype, 'load').mockReturnValue(new THREE.Texture());
+    const mission = MISSIONS.find(({ id }) => id === 'parking_reverse');
+    expect(mission).toBeDefined();
+
+    const built = buildTrackScene(mission!, () => new THREE.Group());
+
+    expect(() => {
+      built.dispose();
+      built.dispose();
+    }).not.toThrow();
   });
 });

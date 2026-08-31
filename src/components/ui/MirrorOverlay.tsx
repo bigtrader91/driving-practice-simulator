@@ -25,13 +25,13 @@ export const MirrorOverlay: React.FC<MirrorOverlayProps> = ({
   return (
     <div className="absolute inset-0 pointer-events-none z-20 select-none overflow-hidden">
       {/* 1. Center Rearview Mirror (Top Center - Completely Isolated from Other UI) */}
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 pointer-events-none">
+      <div data-hud-overlay="rear-mirror" className="absolute top-3 left-1/2 -translate-x-1/2 pointer-events-none">
         <div className="relative border-4 border-slate-800 bg-slate-950 rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/20">
           <canvas
             ref={rearMirrorCanvasRef}
             width={240}
             height={75}
-            className="w-44 sm:w-56 h-14 sm:h-18 object-cover"
+            className="w-44 h-14 object-cover portrait:w-32 portrait:h-12 sm:w-56 sm:h-18"
           />
           <div className="absolute top-1 left-2 text-[9px] font-black text-slate-300 bg-black/70 px-1.5 py-0.5 rounded backdrop-blur-sm">
             룸미러 (Rear)
@@ -41,6 +41,7 @@ export const MirrorOverlay: React.FC<MirrorOverlayProps> = ({
 
       {/* 2. Left Side Mirror (Top Left - High Visibility, No Overlaps) */}
       <div
+        data-hud-overlay="left-mirror"
         className={`absolute top-3 left-3 transition-all duration-300 pointer-events-none ${
           isLeftLooked ? 'scale-110 ring-4 ring-cyan-400' : 'opacity-95'
         }`}
@@ -50,7 +51,7 @@ export const MirrorOverlay: React.FC<MirrorOverlayProps> = ({
             ref={leftMirrorCanvasRef}
             width={180}
             height={110}
-            className="w-36 sm:w-44 h-22 sm:h-28 object-cover"
+            className="w-36 h-22 object-cover portrait:w-24 portrait:h-16 sm:w-44 sm:h-28"
           />
           {/* Mirror Header Badge */}
           <div className="absolute top-1.5 left-2 flex items-center gap-1 bg-black/75 px-2 py-0.5 rounded text-[10px] font-black text-cyan-300 backdrop-blur-sm">
@@ -67,6 +68,7 @@ export const MirrorOverlay: React.FC<MirrorOverlayProps> = ({
 
       {/* 3. Right Side Mirror (Top Right - High Visibility, No Overlaps) */}
       <div
+        data-hud-overlay="right-mirror"
         className={`absolute top-3 right-3 transition-all duration-300 pointer-events-none ${
           isRightLooked ? 'scale-110 ring-4 ring-cyan-400' : 'opacity-95'
         }`}
@@ -76,7 +78,7 @@ export const MirrorOverlay: React.FC<MirrorOverlayProps> = ({
             ref={rightMirrorCanvasRef}
             width={180}
             height={110}
-            className="w-36 sm:w-44 h-22 sm:h-28 object-cover"
+            className="w-36 h-22 object-cover portrait:w-24 portrait:h-16 sm:w-44 sm:h-28"
           />
           {/* Mirror Header Badge */}
           <div className="absolute top-1.5 right-2 flex items-center gap-1 bg-black/75 px-2 py-0.5 rounded text-[10px] font-black text-cyan-300 backdrop-blur-sm">
@@ -93,6 +95,7 @@ export const MirrorOverlay: React.FC<MirrorOverlayProps> = ({
 
       {/* 4. Backup Camera Screen (Active when Gear is 'R', Positioned Cleanly at Bottom Right above controls) */}
       <div
+        data-hud-overlay="backup-camera"
         className={`absolute bottom-52 right-4 pointer-events-none sm:bottom-28 ${
           gear === 'R' ? 'animate-in fade-in zoom-in-95 duration-200' : 'hidden'
         }`}

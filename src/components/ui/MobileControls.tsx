@@ -47,7 +47,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
       onKeyDown={(event) => event.stopPropagation()}
       onKeyUp={(event) => event.stopPropagation()}
     >
-      <div className="absolute inset-x-0 bottom-24 flex flex-col items-center gap-1.5 pointer-events-auto sm:-translate-x-10">
+      <div data-hud-overlay="mobile-command-dock" className="absolute inset-x-0 bottom-24 flex flex-col items-center gap-1.5 pointer-events-auto sm:inset-x-32 sm:bottom-0 sm:flex-row sm:items-end sm:justify-center sm:gap-1">
         <div className="flex gap-1 rounded-xl border border-slate-700 bg-slate-950/85 p-1 shadow-xl backdrop-blur-md">
           {(['P', 'R', 'N', 'D'] as const).map((gear) => (
             <button

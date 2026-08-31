@@ -1,7 +1,10 @@
 import * as THREE from 'three';
 import { Mission, TrafficVehicleData, TrafficDriverBehavior } from '../../types/simulator';
+import { ENVIRONMENT_QUALITY, EnvironmentQuality } from './EnvironmentQuality';
 import { RoadTextureGenerator } from './RoadTextures';
 import { SkyEnvironment } from './SkyEnvironment';
+import { createRoadMaterialPack, RoadMaterialPack } from './RoadMaterialFactory';
+import { CitySceneryPack, createLaneChangeScenery } from './CitySceneryFactory';
 
 export interface CollisionObstacle {
   type: 'box' | 'cylinder';
@@ -25,12 +28,21 @@ export interface TrafficSignalRig {
 
 export type CreateParkedVehicle = (color: number) => THREE.Group;
 
-export const buildTrackScene = (mission: Mission, createParkedVehicle: CreateParkedVehicle): {
+export interface TrackBuildOptions {
+  quality?: EnvironmentQuality;
+}
+
+export const buildTrackScene = (
+  mission: Mission,
+  createParkedVehicle: CreateParkedVehicle,
+  options: TrackBuildOptions = {},
+): {
   trackGroup: THREE.Group;
   obstacles: CollisionObstacle[];
   initialTraffic: TrafficVehicleData[];
   goalMesh?: THREE.Mesh;
   signals: TrafficSignalRig[];
+  dispose(): void;
 } => {
   const group = new THREE.Group();
   const obstacles: CollisionObstacle[] = [];
@@ -38,6 +50,12 @@ export const buildTrackScene = (mission: Mission, createParkedVehicle: CreatePar
   const signals: TrafficSignalRig[] = [];
 
   const textureLoader = new THREE.TextureLoader();
+  const quality = options.quality ?? ENVIRONMENT_QUALITY.high;
+  const isReferenceLaneChange = mission.id === 'city_lane_change';
+  const referenceMaterials: RoadMaterialPack | undefined = isReferenceLaneChange
+    ? createRoadMaterialPack(textureLoader)
+    : undefined;
+  let sceneryPack: CitySceneryPack | undefined;
 
   // 1. Add Realistic SkyDome & Distant Metropolis Horizon
   const skyDome = SkyEnvironment.createSkyDome();
@@ -46,35 +64,36 @@ export const buildTrackScene = (mission: Mission, createParkedVehicle: CreatePar
   const cityHorizon = SkyEnvironment.createCityHorizon(mission.visualVariant);
   group.add(cityHorizon);
 
-  // Load asphalt texture with high tiling
-  const asphaltTex = textureLoader.load('/asphalt.jpg');
-  asphaltTex.wrapS = THREE.RepeatWrapping;
-  asphaltTex.wrapT = THREE.RepeatWrapping;
-  asphaltTex.repeat.set(8, 60);
+  // The legacy material construction remains intact for every non-reference
+  // mission. The lane-change reference scene uses the focused material pack.
+  const asphaltMat = referenceMaterials?.asphalt ?? (() => {
+    const asphaltTex = textureLoader.load('/asphalt.jpg');
+    asphaltTex.wrapS = THREE.RepeatWrapping;
+    asphaltTex.wrapT = THREE.RepeatWrapping;
+    asphaltTex.repeat.set(8, 60);
+    return new THREE.MeshStandardMaterial({
+      map: asphaltTex,
+      roughness: 0.85,
+      metalness: 0.1,
+    });
+  })();
 
-  // Load building facade texture
-  const buildingTex = textureLoader.load('/building.jpg');
-  buildingTex.wrapS = THREE.RepeatWrapping;
-  buildingTex.wrapT = THREE.RepeatWrapping;
-  buildingTex.repeat.set(2, 6);
+  const buildingMat = referenceMaterials?.building ?? (() => {
+    const buildingTex = textureLoader.load('/building.jpg');
+    buildingTex.wrapS = THREE.RepeatWrapping;
+    buildingTex.wrapT = THREE.RepeatWrapping;
+    buildingTex.repeat.set(2, 6);
+    return new THREE.MeshStandardMaterial({
+      map: buildingTex,
+      roughness: 0.2,
+      metalness: 0.8,
+    });
+  })();
 
-  // Materials
-  const asphaltMat = new THREE.MeshStandardMaterial({
-    map: asphaltTex,
-    roughness: 0.85,
-    metalness: 0.1,
-  });
-
-  const buildingMat = new THREE.MeshStandardMaterial({
-    map: buildingTex,
-    roughness: 0.2,
-    metalness: 0.8,
-  });
-
-  const laneYellowMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
-  const laneWhiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  const laneDashedMat = new THREE.MeshBasicMaterial({ color: 0xf1f5f9 });
-  const curbMat = new THREE.MeshStandardMaterial({ color: 0xd1d5db, roughness: 0.6 });
+  const laneYellowMat = referenceMaterials?.laneYellow ?? new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+  const laneWhiteMat = referenceMaterials?.laneWhite ?? new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const laneDashedMat = referenceMaterials?.laneWhite ?? new THREE.MeshBasicMaterial({ color: 0xf1f5f9 });
+  const curbMat = referenceMaterials?.curb ?? new THREE.MeshStandardMaterial({ color: 0xd1d5db, roughness: 0.6 });
   const guardrailMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.85, roughness: 0.25 });
   const grassMat = new THREE.MeshStandardMaterial({ color: 0x1c3a27, roughness: 0.95 });
   const coneOrangeMat = new THREE.MeshStandardMaterial({ color: 0xff5500, roughness: 0.4 });
@@ -748,37 +767,15 @@ export const buildTrackScene = (mission: Mission, createParkedVehicle: CreatePar
       obstacles.push({ type: 'box', x: cx, z: 0, width: 0.4, depth: 320, name: '도로변 보도블록', isPenaltyTrigger: true });
     });
 
-    const visualVariant = Math.max(0, Math.trunc(mission.visualVariant ?? 0));
-    const sceneryStyle = visualVariant % 3;
-    const scenery = new THREE.Group();
-    scenery.name = 'LANE_CHANGE_SCENERY';
-    group.add(scenery);
-
-    for (let index = 0; index < 6; index += 1) {
-      const z = 135 - index * 52 + ((visualVariant * 7 + index * 3) % 13) - 6;
-      const leftHeight = 22 + ((visualVariant * 11 + index * 7) % 24);
-      const rightHeight = 24 + ((visualVariant * 13 + index * 5) % 26);
-      const leftX = -25 - ((visualVariant + index) % 3) * 3;
-      const rightX = 25 + ((visualVariant * 2 + index) % 3) * 3;
-
-      if (sceneryStyle === 0 || (sceneryStyle === 1 && index % 3 === 0)) {
-        createSkyscraper(leftX, z, 13, 20, leftHeight, scenery);
-        createSkyscraper(rightX, z - 12, 13, 20, rightHeight, scenery);
-      } else if (sceneryStyle === 2) {
-        const buildingX = index % 2 === 0 ? leftX : rightX;
-        const buildingZ = index % 2 === 0 ? z : z - 12;
-        const buildingHeight = index % 2 === 0 ? leftHeight : rightHeight;
-        createSkyscraper(buildingX, buildingZ, 13, 20, buildingHeight, scenery);
-      }
-      createTree(-16 - ((visualVariant + index) % 2), z - 18, scenery);
-      createTree(16 + ((visualVariant + index + 1) % 2), z + 12, scenery);
-      if (sceneryStyle === 1) {
-        createTree(-21, z + 4, scenery);
-        createTree(21, z - 7, scenery);
-      }
-      createStreetLight(-13.2, z + 5, false, scenery);
-      createStreetLight(13.2, z - 21, true, scenery);
-    }
+    sceneryPack = createLaneChangeScenery(
+      quality,
+      {
+        building: referenceMaterials!.building,
+        curb: referenceMaterials!.curb,
+      },
+      mission.visualVariant ?? 0,
+    );
+    group.add(sceneryPack.group);
   }
 
   return {
@@ -787,5 +784,9 @@ export const buildTrackScene = (mission: Mission, createParkedVehicle: CreatePar
     initialTraffic,
     goalMesh,
     signals,
+    dispose: () => {
+      sceneryPack?.dispose();
+      referenceMaterials?.dispose();
+    },
   };
 };

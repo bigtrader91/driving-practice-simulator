@@ -82,19 +82,21 @@ export const HUD: React.FC<HUDProps> = ({
 
   const speedRatio = Math.min(1, Math.abs(carState.speed) / 120);
   const mobileSpeedPosition = carState.gear === 'R'
-    ? 'bottom-96 right-3 sm:bottom-2 sm:left-1/2 sm:right-auto sm:-translate-x-1/2'
-    : 'bottom-52 right-3 sm:bottom-2 sm:left-1/2 sm:right-auto sm:-translate-x-1/2';
+    ? 'bottom-96 right-3 sm:bottom-14 sm:left-3 sm:right-auto sm:translate-x-0'
+    : 'bottom-52 right-3 sm:bottom-14 sm:left-3 sm:right-auto sm:translate-x-0';
 
   return (
     <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-3 sm:p-4 select-none z-10">
       {/* 1. Top Section - Under Mirrors (Zero Overlaps) */}
-      <div className="flex justify-between items-start pt-24 sm:pt-28 gap-4">
+      <div className="flex justify-between items-start pt-24 sm:pt-32 gap-4">
         <div className="flex flex-col items-start gap-2">
-          <BrandLogo />
+          <div className="hidden lg:block">
+            <BrandLogo />
+          </div>
 
           {/* Mission Info Card */}
           {showGuidance && (
-            <div className="glass-panel rounded-2xl p-3 max-w-sm pointer-events-auto border-l-4 border-l-cyan-400 shadow-2xl backdrop-blur-xl">
+            <div data-hud-overlay="desktop-mission" className="hidden lg:block glass-panel rounded-2xl p-3 max-w-sm pointer-events-auto border-l-4 border-l-cyan-400 shadow-2xl backdrop-blur-xl">
               <div className="flex items-center gap-2">
                 <span className="bg-cyan-500/20 text-cyan-400 text-[10px] font-black px-2 py-0.5 rounded-full border border-cyan-500/30">
                   {mission.difficulty}
@@ -114,7 +116,7 @@ export const HUD: React.FC<HUDProps> = ({
         </div>
 
         {/* Safety Score & Camera Switcher */}
-        <div className="flex flex-col items-end gap-1.5 pointer-events-auto">
+        <div data-hud-overlay="status-and-camera" className="flex flex-col items-end gap-1.5 pointer-events-auto">
           {showGuidance && <div className="glass-panel rounded-2xl px-3.5 py-1.5 flex items-center gap-2.5 shadow-2xl border border-slate-700/60">
             <div className="text-right">
               <div className="text-[9px] uppercase font-black tracking-wider text-slate-400">안전 점수</div>
@@ -147,10 +149,25 @@ export const HUD: React.FC<HUDProps> = ({
         </div>
       </div>
 
+      {showGuidance && (
+        <div
+          data-hud-overlay="mobile-mission-status"
+          className="absolute right-32 top-40 w-36 rounded-xl border border-cyan-400/40 bg-slate-950/90 px-3 py-2 text-left shadow-xl backdrop-blur-xl portrait:left-3 portrait:right-auto portrait:top-60 portrait:w-64 lg:hidden"
+        >
+          <div className="truncate text-[11px] font-black text-white">{mission.title}</div>
+          <div className="truncate text-[9px] text-slate-300">{mission.subtitle}</div>
+          <div className="mt-1 flex gap-1 text-[9px] font-black">
+            <span className={carState.leftMirrorLooked ? 'text-cyan-300' : 'text-slate-500'}>좌 Q</span>
+            <span className={carState.rearMirrorLooked ? 'text-cyan-300' : 'text-slate-500'}>룸</span>
+            <span className={carState.rightMirrorLooked ? 'text-cyan-300' : 'text-slate-500'}>우 E</span>
+          </div>
+        </div>
+      )}
+
       {/* 2. Middle Notification Banners */}
       <div className="flex flex-col items-center gap-2">
         {showGuidance && recentPenalty && (
-          <div className="animate-bounce">
+          <div data-hud-overlay="penalty-notification" className="animate-bounce">
             <div className="bg-rose-600/95 text-white font-black text-xs sm:text-sm px-4 py-2 rounded-full shadow-2xl flex items-center gap-2 border border-rose-300 backdrop-blur-xl">
               <AlertTriangle className="w-4 h-4 text-yellow-300" />
               <span>{recentPenalty.reason} (-{recentPenalty.points}점)</span>
@@ -159,14 +176,14 @@ export const HUD: React.FC<HUDProps> = ({
         )}
 
         {showGuidance && yieldingCar && (
-          <div className="animate-pulse glass-panel-glow bg-emerald-950/85 border-emerald-400/80 px-4 py-2 rounded-full text-xs font-black text-emerald-300 flex items-center gap-2 shadow-2xl">
+          <div data-hud-overlay="yield-notification" className="animate-pulse glass-panel-glow bg-emerald-950/85 border-emerald-400/80 px-4 py-2 rounded-full text-xs font-black text-emerald-300 flex items-center gap-2 shadow-2xl">
             <Sparkles className="w-4 h-4 text-emerald-400" />
             <span>🟢 [양보 신호] 뒤쪽 차량이 상향등을 깜빡이며 감속 중입니다! (안전 진입 가능)</span>
           </div>
         )}
 
         {showGuidance && aggressiveCar && (
-          <div className="animate-pulse glass-panel bg-rose-950/90 border-rose-500 px-4 py-2 rounded-full text-xs font-black text-rose-300 flex items-center gap-2 shadow-2xl">
+          <div data-hud-overlay="danger-notification" className="animate-pulse glass-panel bg-rose-950/90 border-rose-500 px-4 py-2 rounded-full text-xs font-black text-rose-300 flex items-center gap-2 shadow-2xl">
             <AlertTriangle className="w-4 h-4 text-rose-400" />
             <span>🔴 [위험 경고] 뒤쪽 차량이 양보 없이 가속 중입니다! 차선 변경을 멈추세요.</span>
           </div>
@@ -175,7 +192,7 @@ export const HUD: React.FC<HUDProps> = ({
 
       {/* 3. Shoulder Check & Proximity Radar */}
       <div className="flex justify-between items-center px-1">
-        {showGuidance && <div className="glass-panel p-2 rounded-2xl text-xs space-y-1 border border-slate-800 shadow-2xl backdrop-blur-xl">
+        {showGuidance && <div data-hud-overlay="desktop-shoulder-status" className="hidden lg:block glass-panel p-2 rounded-2xl text-xs space-y-1 border border-slate-800 shadow-2xl backdrop-blur-xl">
           <div className="text-[10px] font-black text-slate-400 flex items-center gap-1">
             <Eye className="w-3.5 h-3.5 text-cyan-400" />
             사각지대 숄더체크
@@ -212,7 +229,7 @@ export const HUD: React.FC<HUDProps> = ({
         </div>}
 
         {showGuidance && sensors.minDistance > 0 && sensors.minDistance < 3.0 && (
-          <div className="glass-panel px-3 py-1.5 rounded-xl border border-amber-500/50 bg-amber-950/50 text-amber-300 font-bold text-xs flex items-center gap-1.5 animate-pulse shadow-xl">
+          <div data-hud-overlay="proximity-warning" className="glass-panel px-3 py-1.5 rounded-xl border border-amber-500/50 bg-amber-950/50 text-amber-300 font-bold text-xs flex items-center gap-1.5 animate-pulse shadow-xl">
             <ShieldAlert className="w-4 h-4 text-amber-400" />
             <span>거리: {sensors.minDistance.toFixed(1)}m</span>
           </div>
@@ -279,17 +296,19 @@ export const HUD: React.FC<HUDProps> = ({
         </div>
 
         {/* Center: Large Luxury Steering Wheel (Prominently Displayed & Controlled by Mouse) */}
-        <div className="hidden lg:col-start-2 lg:block">
-          <LargeSteeringWheel
-            steeringWheelDegrees={carState.steeringWheelDegrees}
-            steeringWheelTurns={carState.steeringWheelTurns}
-            steerAngle={carState.steerAngle}
-            onMouseSteer={onMouseSteer}
-          />
-        </div>
+        {cameraMode !== 'cockpit' && (
+          <div className="hidden lg:col-start-2 lg:block">
+            <LargeSteeringWheel
+              steeringWheelDegrees={carState.steeringWheelDegrees}
+              steeringWheelTurns={carState.steeringWheelTurns}
+              steerAngle={carState.steerAngle}
+              onMouseSteer={onMouseSteer}
+            />
+          </div>
+        )}
 
         {/* Right: Digital Speedometer Cluster & Helper Toggles */}
-        <div className={`absolute ${mobileSpeedPosition} flex flex-col items-end gap-2 pointer-events-auto lg:static lg:col-start-3 lg:row-start-1 lg:justify-self-end lg:translate-x-0`}>
+        <div data-hud-overlay="speed-cluster" className={`absolute ${mobileSpeedPosition} flex flex-col items-end gap-2 pointer-events-auto lg:static lg:col-start-3 lg:row-start-1 lg:justify-self-end lg:translate-x-0`}>
           {/* Speedometer Cluster */}
           <div className="glass-panel-glow rounded-3xl px-5 py-3 flex items-center gap-4 shadow-2xl border border-cyan-500/40 backdrop-blur-2xl">
             <div

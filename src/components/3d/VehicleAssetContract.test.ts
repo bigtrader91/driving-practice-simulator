@@ -5,65 +5,41 @@ import {
   cloneVehicleAsset,
   type VehicleAssetKind,
 } from './VehicleAssetContract';
-
-const addGroup = (root: THREE.Group, name: string) => {
-  const group = new THREE.Group();
-  group.name = name;
-  root.add(group);
-  return group;
-};
-
-const addMesh = (
-  root: THREE.Group,
-  name: string,
-  materialName: string,
-  color: number,
-) => {
-  const material = new THREE.MeshStandardMaterial({ color });
-  material.name = materialName;
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material);
-  mesh.name = name;
-  root.add(mesh);
-  return mesh;
-};
+import { makeVehicleAssetFixture } from './VehicleAssetTestUtils';
 
 const makeCompleteAsset = (
   kind: VehicleAssetKind,
   { playerControls = kind !== 'truck' } = {},
-) => {
-  const root = new THREE.Group();
-  root.name = `${kind.toUpperCase()}_ROOT`;
-
-  addMesh(root, 'BODY', 'PAINT', 0xffffff);
-  addMesh(root, 'GLASS_FRONT', 'GLASS', 0x1e293b);
-  addMesh(root, 'GLASS_REAR', 'GLASS', 0x1e293b);
-  addMesh(root, 'GLASS_LEFT', 'GLASS', 0x1e293b);
-  addMesh(root, 'GLASS_RIGHT', 'GLASS', 0x1e293b);
-
-  ['WHEEL_FL', 'WHEEL_FR', 'WHEEL_RL', 'WHEEL_RR'].forEach((name) => addGroup(root, name));
-
-  addMesh(root, 'HEADLIGHT_L', 'HEADLIGHT', 0xffffff);
-  addMesh(root, 'HEADLIGHT_R', 'HEADLIGHT', 0xffffff);
-  addMesh(root, 'BRAKE_L', 'BRAKE', 0xff0000);
-  addMesh(root, 'BRAKE_R', 'BRAKE', 0xff0000);
-  addMesh(root, 'BLINKER_FL', 'BLINKER', 0xf59e0b);
-  addMesh(root, 'BLINKER_FR', 'BLINKER', 0xf59e0b);
-  addMesh(root, 'BLINKER_RL', 'BLINKER', 0xf59e0b);
-  addMesh(root, 'BLINKER_RR', 'BLINKER', 0xf59e0b);
-
-  if (playerControls) {
-    addGroup(root, 'STEERING_WHEEL');
-    addGroup(root, 'WIPER_L');
-    addGroup(root, 'WIPER_R');
-  }
-
-  return root;
-};
+) => makeVehicleAssetFixture({
+  kind,
+  playerControls,
+  referenceCockpit: kind === 'sedan',
+});
 
 describe('vehicle asset contract', () => {
+  it('binds the sedan exterior, cockpit, and driver eye', () => {
+    const fixture = makeVehicleAssetFixture({ kind: 'sedan', referenceCockpit: true });
+    const bound = bindVehicleAsset(fixture, 'sedan');
+
+    expect(bound.exteriorRoot?.name).toBe('EXTERIOR_ROOT');
+    expect(bound.cockpitRoot?.name).toBe('COCKPIT_ROOT');
+    expect(bound.driverEye?.name).toBe('DRIVER_EYE');
+  });
+
+  it.each(['EXTERIOR_ROOT', 'COCKPIT_ROOT', 'DRIVER_EYE'])
+    ('rejects sedan without %s', (name) => {
+      const fixture = makeVehicleAssetFixture({ kind: 'sedan', referenceCockpit: true });
+      const object = fixture.getObjectByName(name)!;
+      object.parent?.remove(object);
+
+      expect(() => bindVehicleAsset(fixture, 'sedan')).toThrow(
+        new RegExp(`sedan vehicle asset is missing nodes: .*${name}`),
+      );
+    });
+
   it('rejects an asset that omits a required wheel', () => {
     const root = makeCompleteAsset('sedan');
-    root.remove(root.getObjectByName('WHEEL_FR')!);
+    root.getObjectByName('WHEEL_FR')!.parent?.remove(root.getObjectByName('WHEEL_FR')!);
 
     expect(() => bindVehicleAsset(root, 'sedan')).toThrow(
       'sedan vehicle asset is missing nodes: WHEEL_FR',
@@ -72,7 +48,9 @@ describe('vehicle asset contract', () => {
 
   it('requires player controls on selectable cars but not on a truck', () => {
     const player = makeCompleteAsset('sedan');
-    player.remove(player.getObjectByName('STEERING_WHEEL')!);
+    player.getObjectByName('STEERING_WHEEL')!.parent?.remove(
+      player.getObjectByName('STEERING_WHEEL')!,
+    );
 
     expect(() => bindVehicleAsset(player, 'sedan')).toThrow(
       'sedan vehicle asset is missing nodes: STEERING_WHEEL',
@@ -94,7 +72,7 @@ describe('vehicle asset contract', () => {
 
   it('still rejects a traffic compact asset with a missing wheel', () => {
     const root = makeCompleteAsset('traffic-compact', { playerControls: false });
-    root.remove(root.getObjectByName('WHEEL_RR')!);
+    root.getObjectByName('WHEEL_RR')!.parent?.remove(root.getObjectByName('WHEEL_RR')!);
 
     expect(() => bindVehicleAsset(root, 'traffic-compact')).toThrow(
       'traffic-compact vehicle asset is missing nodes: WHEEL_RR',
