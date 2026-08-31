@@ -63,7 +63,14 @@ def mesh_bounds() -> tuple[Vector, Vector]:
     )
 
 
-def material(name: str, color: tuple[float, float, float, float], emission: tuple[float, float, float] | None = None) -> bpy.types.Material:
+def material(
+    name: str,
+    color: tuple[float, float, float, float],
+    emission: tuple[float, float, float] | None = None,
+    *,
+    roughness: float = 0.32,
+    metallic: float = 0.0,
+) -> bpy.types.Material:
     value = bpy.data.materials.get(name) or bpy.data.materials.new(name)
     value.name = name
     value.diffuse_color = color
@@ -71,7 +78,8 @@ def material(name: str, color: tuple[float, float, float, float], emission: tupl
     principled = value.node_tree.nodes.get("Principled BSDF")
     if principled:
         principled.inputs["Base Color"].default_value = color
-        principled.inputs["Roughness"].default_value = 0.32
+        principled.inputs["Roughness"].default_value = roughness
+        principled.inputs["Metallic"].default_value = metallic
         alpha_input = principled.inputs.get("Alpha")
         if alpha_input:
             alpha_input.default_value = color[3]
@@ -233,8 +241,8 @@ def parent_keep_world(obj: bpy.types.Object, parent: bpy.types.Object) -> None:
 
 def add_reference_wheel(root: bpy.types.Object, radius: float, width: float) -> None:
     center = root.matrix_world.translation.copy()
-    tire_material = material("TIRE", (0.008, 0.009, 0.011, 1.0))
-    rim_material = material("RIM", (0.42, 0.48, 0.56, 1.0))
+    tire_material = material("TIRE", (0.008, 0.009, 0.011, 1.0), roughness=0.88)
+    rim_material = material("RIM", (0.42, 0.48, 0.56, 1.0), roughness=0.24, metallic=0.85)
 
     bpy.ops.mesh.primitive_cylinder_add(
         vertices=32,
@@ -327,6 +335,10 @@ def add_reference_cockpit() -> None:
     apply_bevel(cockpit_hood, 0.018)
     parent_keep_world(cockpit_hood, cockpit_root)
 
+    roof_lining = add_box("ROOF_LINING", (1.48, 0.08, 0.03), (0, 0.78, 1.49), interior)
+    apply_bevel(roof_lining, 0.018)
+    parent_keep_world(roof_lining, cockpit_root)
+
     for side, x in (("DRIVER", -0.40), ("PASSENGER", 0.40)):
         seat_root = add_empty(f"SEAT_{side}", (x, -0.18, 0))
         bpy.context.view_layer.update()
@@ -340,8 +352,8 @@ def add_reference_cockpit() -> None:
 
     pillar_material = material("INTERIOR_PILLAR", (0.12, 0.14, 0.18, 1.0), (0.03, 0.04, 0.06))
     pillar_points = {
-        "INNER_A_PILLAR_L": (Vector((-0.82, 0.50, 0.69)), Vector((-0.74, 0.82, 1.30))),
-        "INNER_A_PILLAR_R": (Vector((0.82, 0.50, 0.69)), Vector((0.74, 0.82, 1.30))),
+        "INNER_A_PILLAR_L": (Vector((-0.82, 0.50, 0.69)), Vector((-0.74, 0.78, 1.48))),
+        "INNER_A_PILLAR_R": (Vector((0.82, 0.50, 0.69)), Vector((0.74, 0.78, 1.48))),
         "INNER_B_PILLAR_L": (Vector((-0.77, -0.55, 0.69)), Vector((-0.70, -0.35, 1.30))),
         "INNER_B_PILLAR_R": (Vector((0.77, -0.55, 0.69)), Vector((0.70, -0.35, 1.30))),
     }
@@ -428,27 +440,32 @@ def export_glb(output: Path, *, export_texcoords: bool = True) -> None:
     )
 
 
+def prepare_vehicle(root: Path, kind: str, output: Path) -> None:
+    source = SOURCES[kind]
+    source_dir = root / "assets" / "vehicle-sources" / "quaternius"
+    clear_scene()
+    source_path = source_dir / source.filename
+    if not source_path.is_file():
+        raise FileNotFoundError(f"{kind}: missing source {source_path}")
+    bpy.ops.import_scene.gltf(filepath=str(source_path))
+    rename_source_parts(kind)
+    normalize_source(source.dimensions)
+    add_wheel_handles(kind, source.dimensions)
+    if kind == "sedan":
+        remove_sedan_source_wheels()
+        add_reference_wheels()
+    add_runtime_handles(kind, source.dimensions, source.player_controls)
+    if kind == "sedan":
+        add_reference_cockpit()
+    export_glb(output, export_texcoords=kind != "sedan")
+    print(f"PREPARED {kind} from {source_path}")
+
+
 def main() -> None:
     root = repository_root()
-    source_dir = root / "assets" / "vehicle-sources" / "quaternius"
     output_dir = root / "public" / "models" / "vehicles"
-    for kind, source in SOURCES.items():
-        clear_scene()
-        source_path = source_dir / source.filename
-        if not source_path.is_file():
-            raise FileNotFoundError(f"{kind}: missing source {source_path}")
-        bpy.ops.import_scene.gltf(filepath=str(source_path))
-        rename_source_parts(kind)
-        normalize_source(source.dimensions)
-        add_wheel_handles(kind, source.dimensions)
-        if kind == "sedan":
-            remove_sedan_source_wheels()
-            add_reference_wheels()
-        add_runtime_handles(kind, source.dimensions, source.player_controls)
-        if kind == "sedan":
-            add_reference_cockpit()
-        export_glb(output_dir / f"{kind}.glb", export_texcoords=kind != "sedan")
-        print(f"PREPARED {kind} from {source_path}")
+    for kind in SOURCES:
+        prepare_vehicle(root, kind, output_dir / f"{kind}.glb")
 
 
 if __name__ == "__main__":

@@ -46,6 +46,7 @@ SEDAN_REFERENCE_NODES = {
     "DRIVER_EYE",
     "DASHBOARD",
     "INSTRUMENT_HOOD",
+    "ROOF_LINING",
     "INNER_A_PILLAR_L",
     "INNER_A_PILLAR_R",
     "INNER_B_PILLAR_L",
@@ -70,6 +71,7 @@ SEDAN_COCKPIT_ROOT_NODES = {
     "DRIVER_EYE",
     "DASHBOARD",
     "INSTRUMENT_HOOD",
+    "ROOF_LINING",
     "COCKPIT_HOOD",
     "SEAT_DRIVER",
     "SEAT_DRIVER_BASE",
@@ -111,6 +113,12 @@ REFERENCE_SEDAN_WHEEL_ROOT_CENTERS = {
 REFERENCE_SEDAN_WHEEL_ROOT_TOLERANCE = 0.01
 REFERENCE_SEDAN_TIRE_RADIUS = 0.32
 REFERENCE_SEDAN_TIRE_RADIUS_TOLERANCE = 0.01
+REFERENCE_SEDAN_MAX_TIRE_METALLIC = 0.05
+REFERENCE_SEDAN_MIN_TIRE_ROUGHNESS = 0.75
+REFERENCE_SEDAN_MIN_RIM_METALLIC = 0.70
+REFERENCE_SEDAN_MAX_RIM_ROUGHNESS = 0.40
+REFERENCE_SEDAN_PILLAR_EDGE_TOLERANCE = 0.03
+REFERENCE_SEDAN_PILLAR_DEPTH_TOLERANCE = 0.16
 
 
 def repository_root() -> Path:
@@ -387,6 +395,72 @@ def validate_reference_sedan_wheels() -> list[str]:
                 )
             if max_error > 0.01:
                 failures.append(f"sedan: {tire.name} radial error {max_error:.3f}m exceeds 0.010m")
+            if rim.type == "MESH":
+                rim_points = [root_inverse @ rim.matrix_world @ vertex.co for vertex in rim.data.vertices]
+                rim_radius = max((math.hypot(point.y, point.z) for point in rim_points), default=0.0)
+                if rim_radius >= min(radii):
+                    failures.append(
+                        f"sedan: {rim.name} rim radius {rim_radius:.3f}m must remain inside "
+                        f"the tire radius {min(radii):.3f}m"
+                    )
+
+            tire_material = tire.active_material
+            if tire_material is None:
+                failures.append(f"sedan: {tire.name} is missing a material")
+            elif not tire_material.use_nodes:
+                failures.append(f"sedan: {tire.name} material must use nodes")
+            else:
+                principled = tire_material.node_tree.nodes.get("Principled BSDF")
+                if principled is None:
+                    failures.append(f"sedan: {tire.name} material is missing Principled BSDF")
+                else:
+                    if principled.inputs["Metallic"].default_value > REFERENCE_SEDAN_MAX_TIRE_METALLIC:
+                        failures.append(f"sedan: {tire.name} material must remain non-metallic")
+                    if principled.inputs["Roughness"].default_value < REFERENCE_SEDAN_MIN_TIRE_ROUGHNESS:
+                        failures.append(f"sedan: {tire.name} material must remain rubber-like")
+
+            rim_material = rim.active_material
+            if rim_material is None:
+                failures.append(f"sedan: {rim.name} is missing a material")
+            elif not rim_material.use_nodes:
+                failures.append(f"sedan: {rim.name} material must use nodes")
+            else:
+                principled = rim_material.node_tree.nodes.get("Principled BSDF")
+                if principled is None:
+                    failures.append(f"sedan: {rim.name} material is missing Principled BSDF")
+                else:
+                    if principled.inputs["Metallic"].default_value < REFERENCE_SEDAN_MIN_RIM_METALLIC:
+                        failures.append(f"sedan: {rim.name} material must remain metallic")
+                    if principled.inputs["Roughness"].default_value > REFERENCE_SEDAN_MAX_RIM_ROUGHNESS:
+                        failures.append(f"sedan: {rim.name} material is too rough")
+    return failures
+
+
+def validate_reference_sedan_cockpit() -> list[str]:
+    required = {"ROOF_LINING", "INNER_A_PILLAR_L", "INNER_A_PILLAR_R"}
+    if any(name not in bpy.data.objects for name in required):
+        return []
+
+    failures: list[str] = []
+    roof = bpy.data.objects["ROOF_LINING"]
+    roof_points = [roof.matrix_world @ Vector(corner) for corner in roof.bound_box]
+    roof_min_z = min(point.z for point in roof_points)
+    roof_center_y = sum(point.y for point in roof_points) / len(roof_points)
+    for name in ("INNER_A_PILLAR_L", "INNER_A_PILLAR_R"):
+        pillar = bpy.data.objects[name]
+        if pillar.type != "MESH":
+            failures.append(f"sedan: {name} must be a mesh")
+            continue
+        pillar_points = [pillar.matrix_world @ vertex.co for vertex in pillar.data.vertices]
+        if max(point.z for point in pillar_points) < roof_min_z - 0.03:
+            failures.append(f"sedan: {name} must connect to the roof lining")
+        expected_x = min(point.x for point in roof_points) if name.endswith("_L") else max(
+            point.x for point in roof_points
+        )
+        if min(abs(point.x - expected_x) for point in pillar_points) > REFERENCE_SEDAN_PILLAR_EDGE_TOLERANCE:
+            failures.append(f"sedan: {name} must meet the roof edge")
+        if min(abs(point.y - roof_center_y) for point in pillar_points) > REFERENCE_SEDAN_PILLAR_DEPTH_TOLERANCE:
+            failures.append(f"sedan: {name} must meet the roof depth")
     return failures
 
 
@@ -493,6 +567,7 @@ def validate_asset(
 
     if asset == "sedan":
         failures.extend(validate_reference_sedan_wheels())
+        failures.extend(validate_reference_sedan_cockpit())
 
         size = path.stat().st_size
         triangles = triangle_count()

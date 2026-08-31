@@ -77,9 +77,9 @@ describe('chooseEnvironmentQuality', () => {
       coarsePointer: false,
     })).toEqual({
       name: 'high',
-      pixelRatioCap: 1.5,
-      shadowMapSize: 2048,
-      sceneryDensity: 1,
+      pixelRatioCap: 1.25,
+      shadowMapSize: 1024,
+      sceneryDensity: 0.8,
     });
   });
 
@@ -90,8 +90,8 @@ describe('chooseEnvironmentQuality', () => {
     expect(chooseEnvironmentQuality(input)).toEqual({
       name: 'balanced',
       pixelRatioCap: 1,
-      shadowMapSize: 1024,
-      sceneryDensity: 0.6,
+      shadowMapSize: 512,
+      sceneryDensity: 0.45,
     });
   });
 });
@@ -118,13 +118,13 @@ export interface EnvironmentQualityInput {
 export interface EnvironmentQuality {
   name: EnvironmentQualityName;
   pixelRatioCap: number;
-  shadowMapSize: 1024 | 2048;
+  shadowMapSize: 512 | 1024 | 2048;
   sceneryDensity: number;
 }
 
 export const ENVIRONMENT_QUALITY = {
-  high: { name: 'high', pixelRatioCap: 1.5, shadowMapSize: 2048, sceneryDensity: 1 },
-  balanced: { name: 'balanced', pixelRatioCap: 1, shadowMapSize: 1024, sceneryDensity: 0.6 },
+  high: { name: 'high', pixelRatioCap: 1.25, shadowMapSize: 1024, sceneryDensity: 0.8 },
+  balanced: { name: 'balanced', pixelRatioCap: 1, shadowMapSize: 512, sceneryDensity: 0.45 },
 } as const satisfies Record<EnvironmentQualityName, EnvironmentQuality>;
 
 const HIGH = ENVIRONMENT_QUALITY.high;
@@ -164,7 +164,7 @@ git commit -m "feat: add deterministic visual quality profiles"
 - Generate: `public/models/vehicles/sedan.glb`
 
 **Interfaces:**
-- Produces GLB nodes: `EXTERIOR_ROOT`, `COCKPIT_ROOT`, `DRIVER_EYE`, `DASHBOARD`, `INSTRUMENT_HOOD`, `INNER_A_PILLAR_L`, `INNER_A_PILLAR_R`, `INNER_B_PILLAR_L`, `INNER_B_PILLAR_R`, `ROOF_LINER`, and the existing wheel/lamp/control handles.
+- Produces GLB nodes: `EXTERIOR_ROOT`, `COCKPIT_ROOT`, `DRIVER_EYE`, `DASHBOARD`, `INSTRUMENT_HOOD`, `INNER_A_PILLAR_L`, `INNER_A_PILLAR_R`, `INNER_B_PILLAR_L`, `INNER_B_PILLAR_R`, `ROOF_LINING`, and the existing wheel/lamp/control handles.
 - Preserves: configured sedan dimensions `(1.82, 4.68, 1.44)` and wheelbase `2.72`.
 - Consumed by: Tasks 3, 4, and 6.
 
@@ -180,7 +180,7 @@ import bpy
 REQUIRED = {
     "EXTERIOR_ROOT", "COCKPIT_ROOT", "DRIVER_EYE", "DASHBOARD",
     "INSTRUMENT_HOOD", "INNER_A_PILLAR_L", "INNER_A_PILLAR_R",
-    "INNER_B_PILLAR_L", "INNER_B_PILLAR_R", "ROOF_LINER",
+    "INNER_B_PILLAR_L", "INNER_B_PILLAR_R", "ROOF_LINING",
     "WHEEL_FL", "WHEEL_FR", "WHEEL_RL", "WHEEL_RR",
 }
 
@@ -652,7 +652,7 @@ expect(renderStates.slice(0, 4)).toEqual([
 ]);
 ```
 
-Add a renderer-throws case and assert both root visibilities are restored. Add viewport cases proving 1440x900 uses pixel-ratio cap 1.5 and shadow size 2048, while 844x390 coarse-pointer uses cap 1 and shadow size 1024.
+Add a renderer-throws case and assert both root visibilities are restored. Add viewport cases proving 1440x900 uses pixel-ratio cap 1.25 and shadow size 1024, while 844x390 coarse-pointer uses cap 1 and shadow size 512.
 
 - [ ] **Step 2: Run the integration test and confirm RED**
 

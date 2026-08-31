@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import math
 import sys
 import tempfile
@@ -9,6 +10,7 @@ import bpy
 from mathutils import Vector
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import prepare_vehicle_family as preparer  # noqa: E402
 import validate_vehicles as validator  # noqa: E402
 
 
@@ -18,6 +20,7 @@ REQUIRED = {
     "DRIVER_EYE",
     "DASHBOARD",
     "INSTRUMENT_HOOD",
+    "ROOF_LINING",
     "INNER_A_PILLAR_L",
     "INNER_A_PILLAR_R",
     "INNER_B_PILLAR_L",
@@ -32,6 +35,7 @@ COCKPIT_ROOT_NODES = {
     "DRIVER_EYE",
     "DASHBOARD",
     "INSTRUMENT_HOOD",
+    "ROOF_LINING",
     "COCKPIT_HOOD",
     "SEAT_DRIVER",
     "SEAT_DRIVER_BASE",
@@ -71,7 +75,12 @@ WHEELBASE = 2.72
 WHEELBASE_TOLERANCE = 0.01
 TIRE_RADIUS = 0.32
 TIRE_RADIUS_TOLERANCE = 0.01
+MAX_TIRE_METALLIC = 0.05
+MIN_TIRE_ROUGHNESS = 0.75
+MIN_RIM_METALLIC = 0.70
+MAX_RIM_ROUGHNESS = 0.40
 MAX_REFERENCE_HEIGHT = 1.52
+MIN_ROOF_LINING_HEIGHT = 1.44
 MIN_INTERIOR_CHANNEL = 0.18
 MIN_INTERIOR_EMISSION_CHANNEL = 0.05
 MIN_PILLAR_CHANNEL = 0.08
@@ -108,6 +117,34 @@ def assert_reference_sedan(root: Path) -> None:
             f"reference sedan height {maximum_height:.3f}m exceeds {MAX_REFERENCE_HEIGHT:.3f}m"
         )
 
+    roof_lining = bpy.data.objects["ROOF_LINING"]
+    roof_points = [roof_lining.matrix_world @ Vector(corner) for corner in roof_lining.bound_box]
+    assert min(point.z for point in roof_points) >= MIN_ROOF_LINING_HEIGHT, (
+        "roof lining must remain above the forward sightline"
+    )
+    roof_depth = max(point.y for point in roof_points) - min(point.y for point in roof_points)
+    assert roof_depth <= 0.12, "roof lining must remain a slim upper windshield boundary"
+    assert roof_lining.matrix_world.translation.y >= 0.70, (
+        "roof lining must remain near the A-pillar tops instead of the driver eye"
+    )
+    roof_min_z = min(point.z for point in roof_points)
+    for name in ("INNER_A_PILLAR_L", "INNER_A_PILLAR_R"):
+        pillar = bpy.data.objects[name]
+        pillar_points = [pillar.matrix_world @ vertex.co for vertex in pillar.data.vertices]
+        assert max(point.z for point in pillar_points) >= roof_min_z - 0.03, (
+            f"{name} must connect to the roof lining"
+        )
+        expected_x = min(point.x for point in roof_points) if name.endswith("_L") else max(
+            point.x for point in roof_points
+        )
+        roof_center_y = sum(point.y for point in roof_points) / len(roof_points)
+        assert min(abs(point.x - expected_x) for point in pillar_points) <= 0.03, (
+            f"{name} must meet the roof edge"
+        )
+        assert min(abs(point.y - roof_center_y) for point in pillar_points) <= 0.16, (
+            f"{name} must meet the roof depth"
+        )
+
     interior = bpy.data.materials["INTERIOR"]
     principled = interior.node_tree.nodes["Principled BSDF"]
     base_color = principled.inputs["Base Color"].default_value
@@ -132,6 +169,13 @@ def assert_reference_sedan(root: Path) -> None:
         cockpit_failures.append(
             f"pillar base color {tuple(round(value, 3) for value in pillar_color[:3])} is too dark"
         )
+
+    tire_principled = bpy.data.materials["TIRE"].node_tree.nodes["Principled BSDF"]
+    rim_principled = bpy.data.materials["RIM"].node_tree.nodes["Principled BSDF"]
+    assert tire_principled.inputs["Metallic"].default_value <= MAX_TIRE_METALLIC
+    assert tire_principled.inputs["Roughness"].default_value >= MIN_TIRE_ROUGHNESS
+    assert rim_principled.inputs["Metallic"].default_value >= MIN_RIM_METALLIC
+    assert rim_principled.inputs["Roughness"].default_value <= MAX_RIM_ROUGHNESS
 
     steering = bpy.data.objects["STEERING_WHEEL_RIM"]
     steering_points = [steering.matrix_world @ Vector(corner) for corner in steering.bound_box]
@@ -197,6 +241,10 @@ def assert_reference_sedan(root: Path) -> None:
         }
         assert len(radial_angles) >= 32, f"{wheel_name} tire is visibly faceted"
 
+        rim_points = [root_inverse @ rim.matrix_world @ vertex.co for vertex in rim.data.vertices]
+        rim_radius = max(math.hypot(point.y, point.z) for point in rim_points)
+        assert rim_radius < min(radii), f"{rim.name} must remain inside the tire envelope"
+
     front_y = sum(root.matrix_world.translation.y for root in wheel_roots[:2]) / 2
     rear_y = sum(root.matrix_world.translation.y for root in wheel_roots[2:]) / 2
     assert abs((front_y - rear_y) - WHEELBASE) <= WHEELBASE_TOLERANCE, (
@@ -215,6 +263,17 @@ def export_mutated_sedan(source: Path, output: Path, mutation: str) -> None:
         for vertex in tire.data.vertices:
             vertex.co *= 0.90
         tire.data.update()
+    elif mutation == "rim-envelope":
+        rim = bpy.data.objects["WHEEL_FL_RIM"]
+        for vertex in rim.data.vertices:
+            vertex.co *= 2.0
+        rim.data.update()
+    elif mutation == "tire-material":
+        tire.data.materials.clear()
+    elif mutation == "rim-material":
+        bpy.data.objects["WHEEL_FL_RIM"].data.materials.clear()
+    elif mutation == "pillar-connection":
+        bpy.data.objects["INNER_A_PILLAR_L"].location.x += 0.40
     elif mutation == "hierarchy":
         world = tire.matrix_world.copy()
         tire.parent = None
@@ -260,6 +319,10 @@ def assert_validator_rejects_mutations(root: Path) -> None:
         for mutation, expected_failure in (
             ("wheelbase", "wheelbase"),
             ("radius", "mean radius"),
+            ("rim-envelope", "rim radius"),
+            ("tire-material", "material"),
+            ("rim-material", "material"),
+            ("pillar-connection", "roof edge"),
             ("hierarchy", "must be parented under"),
             ("smooth", "smooth shaded"),
             ("render-root", "COCKPIT_ROOT"),
@@ -282,6 +345,16 @@ def assert_validator_rejects_mutations(root: Path) -> None:
             )
 
 
+def assert_deterministic_regeneration(root: Path) -> None:
+    committed = root / "public/models/vehicles/sedan.glb"
+    with tempfile.TemporaryDirectory(prefix="reference-sedan-regeneration-") as temporary:
+        outputs = [Path(temporary) / f"sedan-{index}.glb" for index in (1, 2)]
+        for output in outputs:
+            preparer.prepare_vehicle(root, "sedan", output)
+        hashes = [hashlib.sha256(path.read_bytes()).hexdigest() for path in [committed, *outputs]]
+        assert len(set(hashes)) == 1, f"sedan regeneration is not byte-stable: {hashes}"
+
+
 def repository_root() -> Path:
     if "--" not in sys.argv:
         raise SystemExit("usage: blender --background --python test_reference_sedan.py -- REPOSITORY_ROOT")
@@ -294,5 +367,6 @@ def repository_root() -> Path:
 if __name__ == "__main__":
     root = repository_root()
     assert_reference_sedan(root)
+    assert_deterministic_regeneration(root)
     assert_validator_rejects_mutations(root)
     print("PASS reference sedan")
