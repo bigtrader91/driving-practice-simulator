@@ -35,7 +35,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   return (
     <>
       {/* Floating Utility Toolbar (Top Center-Right or Bottom) */}
-      <div className="absolute top-36 right-3 hidden flex-col items-end gap-2 z-20 pointer-events-auto md:flex xl:top-4 xl:right-44 xl:flex-row xl:items-center">
+      <div data-hud-overlay="utility-toolbar" className="absolute right-3 hidden gap-2 z-20 pointer-events-auto md:top-64 md:flex md:flex-row md:items-center lg:top-36 lg:flex-col lg:items-end xl:top-4 xl:right-44 xl:flex-row xl:items-center">
         <button
           onClick={onOpenMissions}
           disabled={missionChangeDisabled}
@@ -43,7 +43,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           title={missionChangeDisabled ? '훈련 중에는 코스를 변경할 수 없습니다.' : '코스 선택'}
         >
           <Flag className="w-4 h-4 text-cyan-400" />
-          <span>코스 변경</span>
+          <span className="md:hidden lg:inline">코스 변경</span>
         </button>
 
         <button
@@ -53,7 +53,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           title={vehicleChangeDisabled ? '훈련 중에는 차종을 변경할 수 없습니다.' : '차종 변경'}
         >
           <Car className="w-4 h-4 text-cyan-400" />
-          <span>차종 선택</span>
+          <span className="md:hidden lg:inline">차종 선택</span>
         </button>
 
         <button

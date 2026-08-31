@@ -37,7 +37,8 @@ the checked-in sources. The scripts:
 1. imports each upstream GLB/glTF;
 2. rotates it to the simulator's local `-Z` forward convention;
 3. scales it to the literal simulator collision dimensions and grounds it at zero;
-4. preserves the authored body, glazing, trim, and wheel geometry;
+4. preserves the authored body, glazing, and trim geometry; the reference sedan replaces its
+   source wheels with deterministic 32-segment tire and metallic-rim meshes;
 5. names the paint, wheel, lamp, steering-wheel, and wiper handles required by the runtime contract;
 6. exports a self-contained binary GLB to `public/models/vehicles/`.
 

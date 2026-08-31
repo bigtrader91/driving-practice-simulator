@@ -43,10 +43,14 @@ describe('TrainingFlowOverlay', () => {
     expect(renderFlow(createTrainingSession())).toContain('DrivePrep 3D');
   });
 
-  it('진행 중인 단계 카드를 룸미러 아래에 배치한다', () => {
+  it('진행 중인 단계 카드를 모바일 시야 밖과 데스크톱 룸미러 아래에 배치한다', () => {
     const session = startTrainingSession(createTrainingSession());
+    const flow = renderFlow(session);
 
-    expect(renderFlow(session)).toContain('top-28');
+    expect(flow).toContain('data-hud-overlay="training-phase"');
+    expect(flow).toContain('left-3 top-44');
+    expect(flow).toContain('portrait:w-60');
+    expect(flow).toContain('lg:left-1/2 lg:top-28');
   });
 
   it('URL 첫 화면부터 별도 사후 평가 경계와 최종 결과까지 표시한다', () => {

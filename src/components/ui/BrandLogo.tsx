@@ -1,7 +1,7 @@
 import React from 'react';
 
 export const BrandLogo: React.FC = () => (
-  <div className="inline-flex items-center gap-2 rounded-xl border border-slate-700/60 bg-slate-950/80 px-2.5 py-1.5 shadow-xl backdrop-blur-xl">
+  <div data-hud-overlay="brand" className="inline-flex items-center gap-2 rounded-xl border border-slate-700/60 bg-slate-950/80 px-2.5 py-1.5 shadow-xl backdrop-blur-xl">
     <img
       src="/brand/icon.svg"
       alt=""

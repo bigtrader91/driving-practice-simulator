@@ -51,6 +51,8 @@ import {
   syncTrafficVehicleVisual,
   type TrafficVehicleVisual,
 } from './TrafficVehicleVisual';
+import { chooseEnvironmentQuality } from './EnvironmentQuality';
+import { withVehicleRenderMode } from './VehicleRenderPass';
 
 type LoadVehicleAssetLibrary = (baseUrl: string) => Promise<VehicleAssetLibrary>;
 type VehicleAssetState =
@@ -199,6 +201,12 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
     const cleanup = createCompletionSafeCleanup(cleanupSteps);
 
     try {
+    const quality = chooseEnvironmentQuality({
+      width,
+      height,
+      devicePixelRatio: window.devicePixelRatio,
+      coarsePointer: window.matchMedia('(pointer: coarse)').matches,
+    });
 
     // 1. Scene & Renderer
     const scene = new THREE.Scene();
@@ -214,7 +222,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.15;
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality.pixelRatioCap));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.replaceChildren(renderer.domElement);
@@ -228,17 +236,17 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
     if (leftMirrorCanvasRef?.current) {
       leftMirrorRenderer = new THREE.WebGLRenderer({ canvas: leftMirrorCanvasRef.current, antialias: true });
       cleanupSteps.push({ label: 'left mirror renderer', cleanup: () => leftMirrorRenderer?.dispose() });
-      leftMirrorRenderer.setSize(leftMirrorCanvasRef.current.width, leftMirrorCanvasRef.current.height);
+      leftMirrorRenderer.setSize(leftMirrorCanvasRef.current.width, leftMirrorCanvasRef.current.height, false);
     }
     if (rightMirrorCanvasRef?.current) {
       rightMirrorRenderer = new THREE.WebGLRenderer({ canvas: rightMirrorCanvasRef.current, antialias: true });
       cleanupSteps.push({ label: 'right mirror renderer', cleanup: () => rightMirrorRenderer?.dispose() });
-      rightMirrorRenderer.setSize(rightMirrorCanvasRef.current.width, rightMirrorCanvasRef.current.height);
+      rightMirrorRenderer.setSize(rightMirrorCanvasRef.current.width, rightMirrorCanvasRef.current.height, false);
     }
     if (rearMirrorCanvasRef?.current) {
       rearMirrorRenderer = new THREE.WebGLRenderer({ canvas: rearMirrorCanvasRef.current, antialias: true });
       cleanupSteps.push({ label: 'rear mirror renderer', cleanup: () => rearMirrorRenderer?.dispose() });
-      rearMirrorRenderer.setSize(rearMirrorCanvasRef.current.width, rearMirrorCanvasRef.current.height);
+      rearMirrorRenderer.setSize(rearMirrorCanvasRef.current.width, rearMirrorCanvasRef.current.height, false);
     }
     if (backupCameraCanvasRef?.current) {
       backupRenderer = new THREE.WebGLRenderer({ canvas: backupCameraCanvasRef.current, antialias: true });
@@ -257,8 +265,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
     const sunLight = new THREE.DirectionalLight(0xfffbeb, 1.4);
     sunLight.position.set(60, 130, 70);
     sunLight.castShadow = true;
-    sunLight.shadow.mapSize.width = 2048;
-    sunLight.shadow.mapSize.height = 2048;
+    sunLight.shadow.mapSize.set(quality.shadowMapSize, quality.shadowMapSize);
     sunLight.shadow.camera.near = 10;
     sunLight.shadow.camera.far = 450;
     sunLight.shadow.camera.left = -90;
@@ -269,10 +276,12 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
     scene.add(sunLight);
 
     // 3. Track Scene & Traffic
-    const { trackGroup, obstacles, initialTraffic, signals } = buildTrackScene(
+    const { trackGroup, obstacles, initialTraffic, signals, dispose: disposeTrackScene } = buildTrackScene(
       mission,
       (color) => vehicleAssets.createVehicle('sedan', color).group,
+      { quality },
     );
+    cleanupSteps.push({ label: 'track scene', cleanup: disposeTrackScene });
     const attemptEvents: AttemptEvent[] = [];
     scene.add(trackGroup);
 
@@ -303,8 +312,8 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
     );
     scene.add(car3D.carGroup);
 
-    // 5. Cameras (Near plane at 0.05)
-    const mainCamera = new THREE.PerspectiveCamera(65, width / height, 0.05, 1000);
+    // 5. Cameras (wider cockpit sightline with a conservative near plane)
+    const mainCamera = new THREE.PerspectiveCamera(72, width / height, 0.08, 1000);
     const leftMirrorCam = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 180);
     const rightMirrorCam = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 180);
     const rearMirrorCam = new THREE.PerspectiveCamera(45, 21 / 9, 0.1, 180);
@@ -791,8 +800,15 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
       const heading = carState.heading;
 
       if (uiStateRef.current.cameraMode === 'cockpit') {
-        const eyeOffset = new THREE.Vector3(cpx, cpy + vibeOffset, cpz).applyAxisAngle(new THREE.Vector3(0, 1, 0), heading);
-        mainCamera.position.copy(carPos).add(eyeOffset);
+        if (vehicle.id === 'sedan' && car3D.driverEye) {
+          car3D.carGroup.updateMatrixWorld(true);
+          car3D.driverEye.getWorldPosition(mainCamera.position);
+          mainCamera.position.y += vibeOffset;
+        } else {
+          const eyeOffset = new THREE.Vector3(cpx, cpy + vibeOffset, cpz)
+            .applyAxisAngle(new THREE.Vector3(0, 1, 0), heading);
+          mainCamera.position.copy(carPos).add(eyeOffset);
+        }
 
         const lookDir = getForwardDirection(
           heading + headYaw,
@@ -804,14 +820,17 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
           camRollInertia,
         );
       } else if (uiStateRef.current.cameraMode === 'chase') {
-        const chaseDist = 6.8;
-        const chaseHeight = 3.2 + vibeOffset;
+        const chaseDist = 5.2;
+        const chaseHeight = 1.35 + vibeOffset;
         const camPos = getRearDirection(heading)
           .multiplyScalar(chaseDist)
           .add(carPos);
+        const chaseSide = new THREE.Vector3(1, 0, 0)
+          .applyAxisAngle(new THREE.Vector3(0, 1, 0), heading);
+        camPos.add(chaseSide.multiplyScalar(2.15));
         camPos.y += chaseHeight;
         mainCamera.position.lerp(camPos, 10 * delta);
-        orientCameraToward(mainCamera, new THREE.Vector3(carPos.x, carPos.y + 1.2, carPos.z));
+        orientCameraToward(mainCamera, new THREE.Vector3(carPos.x, carPos.y + 0.78, carPos.z));
       } else if (uiStateRef.current.cameraMode === 'top') {
         mainCamera.position.set(carPos.x, carPos.y + 24, carPos.z);
         orientCameraToward(mainCamera, carPos);
@@ -823,17 +842,11 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
         orientCameraToward(mainCamera, mainCamera.position.clone().add(lookDir));
       }
 
-      if (uiStateRef.current.cameraMode === 'cockpit') {
-        const carVisibility = car3D.carGroup.visible;
-        car3D.carGroup.visible = false;
-        try {
-          renderer.render(scene, mainCamera);
-        } finally {
-          car3D.carGroup.visible = carVisibility;
-        }
-      } else {
-        renderer.render(scene, mainCamera);
-      }
+      withVehicleRenderMode(
+        car3D,
+        uiStateRef.current.cameraMode === 'cockpit' ? 'cockpit' : 'external',
+        () => renderer.render(scene, mainCamera),
+      );
 
       const renderMirror = (
         mirrorRenderer: THREE.WebGLRenderer | null,
@@ -846,7 +859,9 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
         mirrorCam.position.copy(worldPos);
         const mirrorDir = getMirrorDirection(heading, view);
         mirrorCam.lookAt(mirrorCam.position.clone().add(mirrorDir));
-        mirrorRenderer.render(scene, mirrorCam);
+        withVehicleRenderMode(car3D, 'external', () => {
+          mirrorRenderer.render(scene, mirrorCam);
+        });
       };
 
       renderMirror(leftMirrorRenderer, leftMirrorCam, vehicle.leftMirrorPos, 'left');
@@ -860,7 +875,9 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
         backupCam.position.copy(backupPos);
         const backupDir = getRearDirection(heading, -0.25);
         backupCam.lookAt(backupCam.position.clone().add(backupDir));
-        backupRenderer.render(scene, backupCam);
+        withVehicleRenderMode(car3D, 'external', () => {
+          backupRenderer.render(scene, backupCam);
+        });
       }
 
       onStateUpdate(carState, sensors, trafficVehicles);

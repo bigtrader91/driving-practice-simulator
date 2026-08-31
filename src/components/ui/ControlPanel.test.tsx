@@ -1,9 +1,33 @@
+import type React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { ControlHelp, ControlPanel } from './ControlPanel';
 
+const makeProps = (): React.ComponentProps<typeof ControlPanel> => ({
+  onOpenMissions: () => undefined,
+  onOpenVehicles: () => undefined,
+  onResetCar: () => undefined,
+  isMuted: false,
+  onToggleMute: () => undefined,
+  onGearSelect: () => undefined,
+  currentGear: 'D',
+  missionChangeDisabled: true,
+  vehicleChangeDisabled: true,
+  resetDisabled: true,
+  guidanceDisabled: true,
+});
+
 describe('ControlPanel', () => {
-  it('1280px 미만에서는 우측 미러 아래 세로 도구 모음을 사용한다', () => {
+  it('태블릿 폭에서는 필수 유틸리티를 아이콘형 가로 막대로 유지한다', () => {
+    const html = renderToStaticMarkup(<ControlPanel {...makeProps()} />);
+
+    expect(html).toContain('md:flex');
+    expect(html).toContain('md:top-64');
+    expect(html).toContain('md:flex-row');
+    expect(html).toContain('md:hidden lg:inline');
+  });
+
+  it('1024px 이상 1280px 미만에서는 우측 미러 아래 세로 도구 모음을 사용한다', () => {
     const html = renderToStaticMarkup(
       <ControlPanel
         onOpenMissions={() => undefined}
@@ -20,8 +44,8 @@ describe('ControlPanel', () => {
       />
     );
 
-    expect(html).toContain('top-36 right-3');
-    expect(html).toContain('flex-col');
+    expect(html).toContain('right-3');
+    expect(html).toContain('lg:top-36 lg:flex-col lg:items-end');
     expect(html).toContain('xl:top-4 xl:right-44 xl:flex-row');
   });
 

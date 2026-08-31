@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -39,6 +40,54 @@ COMMON_NODES = {
     "BLINKER_RR",
 }
 PLAYER_NODES = {"STEERING_WHEEL", "WIPER_L", "WIPER_R"}
+SEDAN_REFERENCE_NODES = {
+    "EXTERIOR_ROOT",
+    "COCKPIT_ROOT",
+    "DRIVER_EYE",
+    "DASHBOARD",
+    "INSTRUMENT_HOOD",
+    "ROOF_LINING",
+    "INNER_A_PILLAR_L",
+    "INNER_A_PILLAR_R",
+    "INNER_B_PILLAR_L",
+    "INNER_B_PILLAR_R",
+    "COCKPIT_HOOD",
+    "SEAT_DRIVER",
+    "SEAT_DRIVER_BASE",
+    "SEAT_DRIVER_BACK",
+    "SEAT_PASSENGER",
+    "SEAT_PASSENGER_BASE",
+    "SEAT_PASSENGER_BACK",
+    "WHEEL_FL_TIRE",
+    "WHEEL_FL_RIM",
+    "WHEEL_FR_TIRE",
+    "WHEEL_FR_RIM",
+    "WHEEL_RL_TIRE",
+    "WHEEL_RL_RIM",
+    "WHEEL_RR_TIRE",
+    "WHEEL_RR_RIM",
+}
+SEDAN_COCKPIT_ROOT_NODES = {
+    "DRIVER_EYE",
+    "DASHBOARD",
+    "INSTRUMENT_HOOD",
+    "ROOF_LINING",
+    "COCKPIT_HOOD",
+    "SEAT_DRIVER",
+    "SEAT_DRIVER_BASE",
+    "SEAT_DRIVER_BACK",
+    "SEAT_PASSENGER",
+    "SEAT_PASSENGER_BASE",
+    "SEAT_PASSENGER_BACK",
+    "INNER_A_PILLAR_L",
+    "INNER_A_PILLAR_R",
+    "INNER_B_PILLAR_L",
+    "INNER_B_PILLAR_R",
+    "STEERING_WHEEL",
+    "WIPER_L",
+    "WIPER_R",
+}
+SEDAN_EXTERIOR_ROOT_NODES = COMMON_NODES
 TRAFFIC_WHEEL_NAMES = ("WHEEL_FL", "WHEEL_FR", "WHEEL_RL", "WHEEL_RR")
 TRAFFIC_DETAIL_NODES = {"MIRROR_L", "MIRROR_R", "GRILLE", "BUMPER_FRONT", "BUMPER_REAR"}
 DIMENSION_TOLERANCE = 0.08
@@ -53,6 +102,23 @@ MAX_GLASS_ALPHA = 0.58
 TRAFFIC_WHEELBASE = TRAFFIC_SEDAN_WHEELBASE
 TRAFFIC_WHEELBASE_TOLERANCE = 0.08
 MIN_TRAFFIC_WHEEL_WELL_RADIUS = 0.25
+REFERENCE_SEDAN_WHEELBASE = 2.72
+REFERENCE_SEDAN_WHEELBASE_TOLERANCE = 0.01
+REFERENCE_SEDAN_WHEEL_ROOT_CENTERS = {
+    "WHEEL_FL": (-0.728, 1.36, 0.32),
+    "WHEEL_FR": (0.728, 1.36, 0.32),
+    "WHEEL_RL": (-0.728, -1.36, 0.32),
+    "WHEEL_RR": (0.728, -1.36, 0.32),
+}
+REFERENCE_SEDAN_WHEEL_ROOT_TOLERANCE = 0.01
+REFERENCE_SEDAN_TIRE_RADIUS = 0.32
+REFERENCE_SEDAN_TIRE_RADIUS_TOLERANCE = 0.01
+REFERENCE_SEDAN_MAX_TIRE_METALLIC = 0.05
+REFERENCE_SEDAN_MIN_TIRE_ROUGHNESS = 0.75
+REFERENCE_SEDAN_MIN_RIM_METALLIC = 0.70
+REFERENCE_SEDAN_MAX_RIM_ROUGHNESS = 0.40
+REFERENCE_SEDAN_PILLAR_EDGE_TOLERANCE = 0.03
+REFERENCE_SEDAN_PILLAR_DEPTH_TOLERANCE = 0.16
 
 
 def repository_root() -> Path:
@@ -263,6 +329,141 @@ def validate_wheel_roots(
     return failures
 
 
+def validate_reference_sedan_wheels() -> list[str]:
+    failures: list[str] = []
+    if any(name not in bpy.data.objects for name in TRAFFIC_WHEEL_NAMES):
+        return failures
+
+    wheel_roots = [bpy.data.objects[name] for name in TRAFFIC_WHEEL_NAMES]
+    identities = {root.as_pointer() for root in wheel_roots}
+    if len(identities) != len(wheel_roots):
+        failures.append("sedan: wheel roots are not four unique object identities")
+
+    for name, expected_center in REFERENCE_SEDAN_WHEEL_ROOT_CENTERS.items():
+        actual_center = bpy.data.objects[name].matrix_world.translation
+        for axis, actual, expected in zip(
+            ("X", "Y", "Z"),
+            actual_center,
+            expected_center,
+            strict=True,
+        ):
+            if abs(actual - expected) > REFERENCE_SEDAN_WHEEL_ROOT_TOLERANCE:
+                failures.append(
+                    f"sedan: {name} center {axis}={actual:.3f}m expected {expected:.3f}m "
+                    f"±{REFERENCE_SEDAN_WHEEL_ROOT_TOLERANCE:.3f}m"
+                )
+
+    front_y = sum(root.matrix_world.translation.y for root in wheel_roots[:2]) / 2
+    rear_y = sum(root.matrix_world.translation.y for root in wheel_roots[2:]) / 2
+    wheelbase = front_y - rear_y
+    if abs(wheelbase - REFERENCE_SEDAN_WHEELBASE) > REFERENCE_SEDAN_WHEELBASE_TOLERANCE:
+        failures.append(
+            f"sedan: wheelbase {wheelbase:.3f}m expected {REFERENCE_SEDAN_WHEELBASE:.3f}m "
+            f"±{REFERENCE_SEDAN_WHEELBASE_TOLERANCE:.3f}m"
+        )
+
+    for root in wheel_roots:
+        tire = bpy.data.objects.get(f"{root.name}_TIRE")
+        rim = bpy.data.objects.get(f"{root.name}_RIM")
+        if tire is None or rim is None:
+            continue
+        if tire.type != "MESH":
+            failures.append(f"sedan: {tire.name} must be a mesh")
+        if rim.type != "MESH":
+            failures.append(f"sedan: {rim.name} must be a mesh")
+        if tire is rim:
+            failures.append(f"sedan: {root.name} tire and rim must be distinct mesh objects")
+        if tire.parent is not root:
+            failures.append(f"sedan: {tire.name} must be parented under {root.name}")
+        if rim.parent is not root:
+            failures.append(f"sedan: {rim.name} must be parented under {root.name}")
+        if tire.type == "MESH":
+            if not all(polygon.use_smooth for polygon in tire.data.polygons):
+                failures.append(f"sedan: {tire.name} must be smooth shaded")
+            root_inverse = root.matrix_world.inverted()
+            points = [root_inverse @ tire.matrix_world @ vertex.co for vertex in tire.data.vertices]
+            radii = [math.hypot(point.y, point.z) for point in points]
+            if not radii:
+                failures.append(f"sedan: {tire.name} has no radial samples")
+                continue
+            mean_radius = sum(radii) / len(radii)
+            max_error = max(abs(radius - mean_radius) for radius in radii)
+            if abs(mean_radius - REFERENCE_SEDAN_TIRE_RADIUS) > REFERENCE_SEDAN_TIRE_RADIUS_TOLERANCE:
+                failures.append(
+                    f"sedan: {tire.name} mean radius {mean_radius:.3f}m expected "
+                    f"{REFERENCE_SEDAN_TIRE_RADIUS:.3f}m ±{REFERENCE_SEDAN_TIRE_RADIUS_TOLERANCE:.3f}m"
+                )
+            if max_error > 0.01:
+                failures.append(f"sedan: {tire.name} radial error {max_error:.3f}m exceeds 0.010m")
+            if rim.type == "MESH":
+                rim_points = [root_inverse @ rim.matrix_world @ vertex.co for vertex in rim.data.vertices]
+                rim_radius = max((math.hypot(point.y, point.z) for point in rim_points), default=0.0)
+                if rim_radius >= min(radii):
+                    failures.append(
+                        f"sedan: {rim.name} rim radius {rim_radius:.3f}m must remain inside "
+                        f"the tire radius {min(radii):.3f}m"
+                    )
+
+            tire_material = tire.active_material
+            if tire_material is None:
+                failures.append(f"sedan: {tire.name} is missing a material")
+            elif not tire_material.use_nodes:
+                failures.append(f"sedan: {tire.name} material must use nodes")
+            else:
+                principled = tire_material.node_tree.nodes.get("Principled BSDF")
+                if principled is None:
+                    failures.append(f"sedan: {tire.name} material is missing Principled BSDF")
+                else:
+                    if principled.inputs["Metallic"].default_value > REFERENCE_SEDAN_MAX_TIRE_METALLIC:
+                        failures.append(f"sedan: {tire.name} material must remain non-metallic")
+                    if principled.inputs["Roughness"].default_value < REFERENCE_SEDAN_MIN_TIRE_ROUGHNESS:
+                        failures.append(f"sedan: {tire.name} material must remain rubber-like")
+
+            rim_material = rim.active_material
+            if rim_material is None:
+                failures.append(f"sedan: {rim.name} is missing a material")
+            elif not rim_material.use_nodes:
+                failures.append(f"sedan: {rim.name} material must use nodes")
+            else:
+                principled = rim_material.node_tree.nodes.get("Principled BSDF")
+                if principled is None:
+                    failures.append(f"sedan: {rim.name} material is missing Principled BSDF")
+                else:
+                    if principled.inputs["Metallic"].default_value < REFERENCE_SEDAN_MIN_RIM_METALLIC:
+                        failures.append(f"sedan: {rim.name} material must remain metallic")
+                    if principled.inputs["Roughness"].default_value > REFERENCE_SEDAN_MAX_RIM_ROUGHNESS:
+                        failures.append(f"sedan: {rim.name} material is too rough")
+    return failures
+
+
+def validate_reference_sedan_cockpit() -> list[str]:
+    required = {"ROOF_LINING", "INNER_A_PILLAR_L", "INNER_A_PILLAR_R"}
+    if any(name not in bpy.data.objects for name in required):
+        return []
+
+    failures: list[str] = []
+    roof = bpy.data.objects["ROOF_LINING"]
+    roof_points = [roof.matrix_world @ Vector(corner) for corner in roof.bound_box]
+    roof_min_z = min(point.z for point in roof_points)
+    roof_center_y = sum(point.y for point in roof_points) / len(roof_points)
+    for name in ("INNER_A_PILLAR_L", "INNER_A_PILLAR_R"):
+        pillar = bpy.data.objects[name]
+        if pillar.type != "MESH":
+            failures.append(f"sedan: {name} must be a mesh")
+            continue
+        pillar_points = [pillar.matrix_world @ vertex.co for vertex in pillar.data.vertices]
+        if max(point.z for point in pillar_points) < roof_min_z - 0.03:
+            failures.append(f"sedan: {name} must connect to the roof lining")
+        expected_x = min(point.x for point in roof_points) if name.endswith("_L") else max(
+            point.x for point in roof_points
+        )
+        if min(abs(point.x - expected_x) for point in pillar_points) > REFERENCE_SEDAN_PILLAR_EDGE_TOLERANCE:
+            failures.append(f"sedan: {name} must meet the roof edge")
+        if min(abs(point.y - roof_center_y) for point in pillar_points) > REFERENCE_SEDAN_PILLAR_DEPTH_TOLERANCE:
+            failures.append(f"sedan: {name} must meet the roof depth")
+    return failures
+
+
 def validate_asset(
     root: Path,
     asset: str,
@@ -282,11 +483,29 @@ def validate_asset(
         return [f"{asset}: import failed: {error}"]
 
     required = COMMON_NODES | (PLAYER_NODES if player_controls else set())
+    if asset == "sedan":
+        required |= SEDAN_REFERENCE_NODES
     if asset == "traffic-compact":
         required |= TRAFFIC_DETAIL_NODES
     missing = sorted(required.difference(bpy.data.objects.keys()))
     if missing:
         failures.append(f"{asset}: missing nodes: {', '.join(missing)}")
+
+    if asset == "sedan" and not missing:
+        for root_name in ("COCKPIT_ROOT", "EXTERIOR_ROOT"):
+            if bpy.data.objects[root_name].parent is not None:
+                failures.append(f"sedan: {root_name} must be top-level")
+        for root_name, names in (
+            ("COCKPIT_ROOT", SEDAN_COCKPIT_ROOT_NODES),
+            ("EXTERIOR_ROOT", SEDAN_EXTERIOR_ROOT_NODES),
+        ):
+            expected_root = bpy.data.objects[root_name]
+            for name in sorted(names):
+                parent = bpy.data.objects[name].parent
+                while parent is not None and parent is not expected_root:
+                    parent = parent.parent
+                if parent is None:
+                    failures.append(f"sedan: {name} must be parented under {root_name}")
 
     negative_scale = sorted(
         obj.name
@@ -346,6 +565,18 @@ def validate_asset(
     if not paint_found:
         failures.append(f"{asset}: missing PAINT material")
 
+    if asset == "sedan":
+        failures.extend(validate_reference_sedan_wheels())
+        failures.extend(validate_reference_sedan_cockpit())
+
+        size = path.stat().st_size
+        triangles = triangle_count()
+        print(f"METRIC sedan bytes={size} triangles={triangles}")
+        if size > MAX_RUNTIME_BYTES:
+            failures.append(f"sedan: file size {size} bytes exceeds {MAX_RUNTIME_BYTES}")
+        if triangles > MAX_RUNTIME_TRIANGLES:
+            failures.append(f"sedan: triangle count {triangles} exceeds {MAX_RUNTIME_TRIANGLES}")
+
     if asset == "traffic-compact":
         if all(name in bpy.data.objects for name in TRAFFIC_WHEEL_NAMES):
             wheel_roots = [bpy.data.objects[name] for name in TRAFFIC_WHEEL_NAMES]
@@ -353,6 +584,7 @@ def validate_asset(
 
         size = path.stat().st_size
         triangles = triangle_count()
+        print(f"METRIC traffic-compact bytes={size} triangles={triangles}")
         if size > MAX_RUNTIME_BYTES:
             failures.append(f"{asset}: file size {size} bytes exceeds {MAX_RUNTIME_BYTES}")
         if triangles > MAX_RUNTIME_TRIANGLES:

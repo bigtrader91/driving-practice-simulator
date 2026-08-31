@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { cloneVehicleAsset } from './VehicleAssetContract';
 import { loadVehicleAssetLibrary } from './VehicleAssetLibrary';
 
 const requiredNodeNames = [
@@ -145,6 +146,35 @@ describe('vehicle asset library', () => {
       blue.rearLeftWheel,
       blue.rearRightWheel,
     ]).size).toBe(4);
+  });
+
+  it('binds and clones the real sedan cockpit roots with shared geometry', async () => {
+    const template = await parseRuntimeScene('sedan.glb');
+    const first = cloneVehicleAsset(template, 'sedan', 0x2563eb);
+    const second = cloneVehicleAsset(template, 'sedan', 0xdc2626);
+
+    expect(first.exteriorRoot).not.toBe(second.exteriorRoot);
+    expect(first.cockpitRoot).not.toBe(second.cockpitRoot);
+    first.group.updateMatrixWorld(true);
+    expect(first.driverEye?.getWorldPosition(new THREE.Vector3()).x).toBeCloseTo(-0.40, 2);
+    expect(first.bodyMeshes[0].geometry).toBe(second.bodyMeshes[0].geometry);
+
+    expect(namedMaterial(first.bodyMeshes[0], 'PAINT'))
+      .not.toBe(namedMaterial(second.bodyMeshes[0], 'PAINT'));
+    [
+      { first: first.headlights, second: second.headlights, material: 'HEADLIGHT' },
+      { first: first.brakeLights, second: second.brakeLights, material: 'BRAKE' },
+      {
+        first: [...first.frontBlinkers, ...first.rearBlinkers],
+        second: [...second.frontBlinkers, ...second.rearBlinkers],
+        material: 'BLINKER',
+      },
+    ].forEach(({ first: firstHandles, second: secondHandles, material }) => {
+      firstHandles.forEach((firstHandle, index) => {
+        expect(namedMaterial(firstHandle, material))
+          .not.toBe(namedMaterial(secondHandles[index], material));
+      });
+    });
   });
 
   it('normalizes the base URL and caches one in-flight promise before loading', async () => {
