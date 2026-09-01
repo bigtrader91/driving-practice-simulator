@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-labelledby="title description">
+  <title id="title">DrivePrep 3D</title>
+  <desc id="description">초보 운전, 3D로 먼저 연습하세요</desc>
+  <rect width="1200" height="630" fill="#0f172a"/>
+  <circle cx="1010" cy="90" r="240" fill="#172554" opacity="0.55"/>
+  <circle cx="1050" cy="110" r="150" fill="#1e3a8a" opacity="0.38"/>
+
+  <g transform="translate(76 62) scale(2.5)">
+    <rect x="4" y="4" width="56" height="56" rx="14" fill="#111c33" stroke="#334155" stroke-width="1.2"/>
+    <path fill="#f8fafc" d="M15 13h17c12 0 21 8.5 21 19 0 7-4 13-10 16l-4-7c4-2 6-5 6-9 0-6-5-11-13-11h-9v10l-8 16V13Z"/>
+    <path fill="#3b82f6" d="M29 49h6l-1-9h-4l-1 9Zm1.5-13h3l-.5-6h-2l-.5 6Z"/>
+  </g>
+
+  <g fill="#f8fafc" font-family="sans-serif">
+    <text x="264" y="122" font-size="48" font-weight="800" letter-spacing="-1">DrivePrep 3D</text>
+    <text x="266" y="164" font-size="20" font-weight="700" fill="#93c5fd">웹 3D 운전 연습 시뮬레이터</text>
+    <text x="76" y="302" font-size="58" font-weight="800" letter-spacing="-2">초보 운전, 3D로 먼저 연습하세요</text>
+    <text x="78" y="360" font-size="27" font-weight="500" fill="#cbd5e1">차폭감 · 주차 · 차선 변경 · 도로주행을 단계별 미션으로</text>
+  </g>
+
+  <g>
+    <path d="M0 630 515 420h170l515 210Z" fill="#111827"/>
+    <path d="M515 420 0 630" stroke="#334155" stroke-width="5"/>
+    <path d="m685 420 515 210" stroke="#334155" stroke-width="5"/>
+    <path d="M600 438 600 474" stroke="#3b82f6" stroke-width="10" stroke-linecap="round"/>
+    <path d="M600 505 600 560" stroke="#3b82f6" stroke-width="14" stroke-linecap="round"/>
+    <path d="M600 596 600 630" stroke="#3b82f6" stroke-width="18" stroke-linecap="round"/>
+    <path d="M490 453 420 495" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" opacity="0.9"/>
+    <path d="M710 453 780 495" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" opacity="0.9"/>
+    <path d="M354 536 250 600" stroke="#f8fafc" stroke-width="12" stroke-linecap="round" opacity="0.9"/>
+    <path d="M846 536 950 600" stroke="#f8fafc" stroke-width="12" stroke-linecap="round" opacity="0.9"/>
+  </g>
+
+  <g transform="translate(940 378)">
+    <path d="M23 64 42 23c6-13 17-20 31-20h93c14 0 25 7 31 20l19 41" fill="#1e293b" stroke="#60a5fa" stroke-width="5"/>
+    <rect x="7" y="60" width="225" height="84" rx="28" fill="#1e293b" stroke="#60a5fa" stroke-width="5"/>
+    <path d="M58 25h122l20 44H38Z" fill="#172554" stroke="#93c5fd" stroke-width="4"/>
+    <circle cx="58" cy="142" r="18" fill="#0f172a" stroke="#64748b" stroke-width="5"/>
+    <circle cx="181" cy="142" r="18" fill="#0f172a" stroke="#64748b" stroke-width="5"/>
+    <rect x="30" y="88" width="42" height="19" rx="9" fill="#dbeafe"/>
+    <rect x="167" y="88" width="42" height="19" rx="9" fill="#dbeafe"/>
+  </g>
+</svg>
